@@ -2,7 +2,7 @@
 // Creator login endpoint for Astro on Netlify
 
 import type { APIRoute } from 'astro';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 export const prerender = false;
 
