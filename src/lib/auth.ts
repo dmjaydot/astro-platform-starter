@@ -43,6 +43,9 @@ export async function getAuthSession(cookies: AstroCookies): Promise<AuthSession
   };
 }
 
+// Alias for backwards compatibility
+export const getSessionFromCookies = getAuthSession;
+
 /**
  * Require authentication - returns session or redirect path
  */
