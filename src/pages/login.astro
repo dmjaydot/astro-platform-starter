@@ -4,7 +4,7 @@
 
 export const prerender = false;
 
-import { getSessionFromCookies } from '../../lib/auth';
+import { getSessionFromCookies } from '../lib/auth';
 
 // Redirect if already logged in as admin
 const session = await getSessionFromCookies(Astro.cookies);
