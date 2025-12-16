@@ -1,372 +1,286 @@
 ---
-// src/pages/index.astro
-import Layout from '../layouts/Layout.astro';
+// src/pages/campaigns/index.astro
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import { supabase, getSession, getUserProfile } from '../../lib/supabase';
+
+const session = await getSession(Astro.cookies);
+let userProfile = null;
+if (session) {
+  userProfile = await getUserProfile(session.user.id);
+}
+
+// Fetch active campaigns
+const { data: campaigns } = await supabase
+  .from('campaigns')
+  .select(`
+    *,
+    profiles!manager_id(full_name, avatar_url)
+  `)
+  .eq('status', 'active')
+  .order('created_at', { ascending: false });
 ---
 
-<Layout title="Home">
-    <style>
-        .hero {
-            text-align: center;
-            padding: 4rem 0 3rem;
-            animation: fadeIn 0.6s ease-out;
-        }
-        
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-        }
-        
-        .hero h1 {
-            font-family: var(--font-serif);
-            font-size: 4.5rem;
-            font-weight: 700;
-            line-height: 1.1;
-            letter-spacing: -0.03em;
-            margin-bottom: 1.5rem;
-        }
-        
-        .hero-subtitle {
-            font-size: 1.375rem;
-            color: var(--color-muted);
-            max-width: 700px;
-            margin: 0 auto 2.5rem;
-            line-height: 1.6;
-        }
-        
-        .hero-cta {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 1rem 2rem;
-            background: var(--color-accent);
-            color: white;
-            text-decoration: none;
-            border-radius: 10px;
-            font-weight: 600;
-            font-size: 1.0625rem;
-            transition: all 0.3s;
-            letter-spacing: 0.01em;
-        }
-        
-        .hero-cta:hover {
-            background: #1d4ed8;
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
-        }
-        
-        .section-title {
-            font-family: var(--font-serif);
-            font-size: 2.5rem;
-            font-weight: 700;
-            text-align: center;
-            margin: 5rem 0 3rem;
-            letter-spacing: -0.02em;
-        }
-        
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2.5rem;
-            margin-top: 3rem;
-        }
-        
-        .feature-card {
-            background: white;
-            padding: 2.5rem;
-            border-radius: 12px;
-            border: 1px solid var(--color-border);
-            transition: all 0.3s;
-        }
-        
-        .feature-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-        }
-        
-        .feature-icon {
-            width: 3rem;
-            height: 3rem;
-            background: var(--color-accent-light);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1.5rem;
-        }
-        
-        .feature-card h3 {
-            font-family: var(--font-serif);
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-        
-        .feature-card p {
-            color: var(--color-muted);
-            line-height: 1.7;
-        }
-        
-        .cta-section {
-            text-align: center;
-            padding: 4rem 0;
-            margin-top: 3rem;
-        }
-        
-        .cta-section .hero-subtitle {
-            margin-bottom: 2rem;
-        }
-        
-        @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 2.5rem;
-            }
-            
-            .hero-subtitle {
-                font-size: 1.125rem;
-            }
-            
-            .features-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        .server-message-banner {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 200;
-            padding: 1rem 2rem;
-            display: none;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            font-size: 0.9375rem;
-            font-weight: 500;
-            animation: slideDown 0.4s ease-out;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        .server-message-banner.show {
-            display: flex;
-        }
-        
-        .server-message-banner.info {
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-            color: #1e40af;
-        }
-        
-        .server-message-banner.success {
-            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-            color: #065f46;
-        }
-        
-        .server-message-banner.warning {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            color: #92400e;
-        }
-        
-        .server-message-banner.error {
-            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-            color: #991b1b;
-        }
-        
-        .server-message-content {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        
-        .server-message-icon {
-            width: 1.5rem;
-            height: 1.5rem;
-            flex-shrink: 0;
-        }
-        
-        .server-message-text {
-            flex: 1;
-        }
-        
-        .server-message-link {
-            color: inherit;
-            font-weight: 600;
-            text-decoration: underline;
-            margin-left: 0.5rem;
-        }
-        
-        .server-message-close {
-            background: none;
-            border: none;
-            color: inherit;
-            cursor: pointer;
-            padding: 0.25rem;
-            opacity: 0.7;
-            transition: opacity 0.2s;
-        }
-        
-        .server-message-close:hover {
-            opacity: 1;
-        }
-        
-        .hero {
-            margin-top: 0;
-        }
-        
-        .server-message-banner.show ~ .hero {
-            margin-top: 5rem;
-        }
-    </style>
+<Layout title="Campaigns">
+  <style>
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+    
+    .page-title {
+      font-family: var(--font-serif);
+      font-size: 2.5rem;
+      font-weight: 700;
+    }
+    
+    .create-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: var(--color-accent);
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    
+    .create-btn:hover {
+      background: #1d4ed8;
+      transform: translateY(-2px);
+    }
+    
+    .campaigns-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .campaign-card {
+      background: white;
+      border-radius: 12px;
+      border: 1px solid var(--color-border);
+      overflow: hidden;
+      transition: all 0.3s;
+    }
+    
+    .campaign-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.08);
+    }
+    
+    .campaign-cover {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      background: linear-gradient(135deg, var(--color-accent-light) 0%, #e0e7ff 100%);
+    }
+    
+    .campaign-body {
+      padding: 1.5rem;
+    }
+    
+    .campaign-title {
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--color-ink);
+    }
+    
+    .campaign-description {
+      color: var(--color-muted);
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    
+    .campaign-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 1rem;
+      border-top: 1px solid var(--color-border);
+    }
+    
+    .campaign-payout {
+      font-weight: 600;
+      color: var(--color-accent);
+    }
+    
+    .campaign-slots {
+      font-size: 0.875rem;
+      color: var(--color-muted);
+    }
+    
+    .campaign-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      background: #fafafa;
+      border-top: 1px solid var(--color-border);
+    }
+    
+    .manager-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--color-muted);
+    }
+    
+    .manager-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--color-accent-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--color-accent);
+    }
+    
+    .view-btn {
+      padding: 0.5rem 1rem;
+      background: var(--color-ink);
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .view-btn:hover {
+      background: #333;
+    }
+    
+    .hashtags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .hashtag {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      background: var(--color-accent-light);
+      color: var(--color-accent);
+      border-radius: 4px;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      background: white;
+      border-radius: 12px;
+      border: 1px solid var(--color-border);
+    }
+    
+    .empty-state-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    
+    .empty-state-title {
+      font-family: var(--font-serif);
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    
+    .empty-state-text {
+      color: var(--color-muted);
+    }
+    
+    @media (max-width: 768px) {
+      .campaigns-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .page-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+    }
+  </style>
 
-    <!-- Server Message Banner -->
-    <div id="serverMessageBanner" class="server-message-banner">
-        <div class="server-message-content">
-            <svg class="server-message-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span class="server-message-text" id="serverMessageText"></span>
+  <div class="page-header">
+    <h1 class="page-title">Active Campaigns</h1>
+    {userProfile?.role === 'manager' && (
+      <a href="/campaigns/create" class="create-btn">
+        + Create Campaign
+      </a>
+    )}
+  </div>
+  
+  {campaigns && campaigns.length > 0 ? (
+    <div class="campaigns-grid">
+      {campaigns.map((campaign) => (
+        <div class="campaign-card">
+          {campaign.cover_image_url ? (
+            <img src={campaign.cover_image_url} alt={campaign.title} class="campaign-cover" />
+          ) : (
+            <div class="campaign-cover"></div>
+          )}
+          
+          <div class="campaign-body">
+            <h2 class="campaign-title">{campaign.title}</h2>
+            <p class="campaign-description">
+              {campaign.description || 'No description provided.'}
+            </p>
+            
+            {campaign.hashtags && campaign.hashtags.length > 0 && (
+              <div class="hashtags">
+                {campaign.hashtags.slice(0, 3).map((tag) => (
+                  <span class="hashtag">#{tag}</span>
+                ))}
+              </div>
+            )}
+            
+            <div class="campaign-meta">
+              <span class="campaign-payout">
+                ${campaign.payout_per_post || 0} per post
+              </span>
+              <span class="campaign-slots">
+                {campaign.max_creators || 10} spots
+              </span>
+            </div>
+          </div>
+          
+          <div class="campaign-footer">
+            <div class="manager-info">
+              <div class="manager-avatar">
+                {campaign.profiles?.full_name?.charAt(0) || 'M'}
+              </div>
+              <span>{campaign.profiles?.full_name || 'Manager'}</span>
+            </div>
+            <a href={`/campaigns/${campaign.slug || campaign.id}`} class="view-btn">
+              View Details
+            </a>
+          </div>
         </div>
-        <button class="server-message-close" id="closeMessageBtn">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
+      ))}
     </div>
-
-    <!-- Hero Section -->
-    <section class="hero">
-        <h1>Create Authentic Content.<br>Get Paid.</h1>
-        <p class="hero-subtitle">
-            Join thousands of creators partnering with top brands to produce engaging 
-            user-generated content that drives real results.
-        </p>
-        <a href="#features" class="hero-cta">
-            Explore Campaigns
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
-        </a>
-    </section>
-
-    <!-- Features Section -->
-    <section id="features">
-        <h2 class="section-title">Why Creators Choose Banity</h2>
-        
-        <div class="features-grid">
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                </div>
-                <h3>Fair Pay</h3>
-                <p>Transparent compensation for every campaign. Get paid within 30 days of completing approved deliverables.</p>
-            </div>
-            
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                </div>
-                <h3>Rights Protected</h3>
-                <p>You retain ownership of your content. Limited 5-year license ensures your work is used fairly.</p>
-            </div>
-            
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                </div>
-                <h3>Fast Matching</h3>
-                <p>Our platform connects you with campaigns that match your audience and style in minutes.</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- CTA Section -->
-    <section class="cta-section">
-        <h2 class="section-title" style="margin-top: 2rem; margin-bottom: 1.5rem;">Ready to Get Started?</h2>
-        <p class="hero-subtitle">
-            Join our community of creators and start earning from your content today.
-        </p>
-        <a href="#contact" class="hero-cta">
-            Join Banity
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
-        </a>
-    </section>
-
-    <script>
-        // Load and display server messages from admin dashboard
-        function loadServerMessages() {
-            const messages = JSON.parse(localStorage.getItem('serverMessages') || '[]');
-            const banner = document.getElementById('serverMessageBanner');
-            const textEl = document.getElementById('serverMessageText');
-            
-            if (messages.length === 0) {
-                banner.classList.remove('show');
-                return;
-            }
-            
-            // Display the most recent message
-            const latestMessage = messages[messages.length - 1];
-            const dismissedMessages = JSON.parse(localStorage.getItem('dismissedMessages') || '[]');
-            
-            // Don't show if user dismissed this message
-            if (dismissedMessages.includes(latestMessage.id)) {
-                return;
-            }
-            
-            // Set message type styling
-            banner.className = `server-message-banner ${latestMessage.type} show`;
-            
-            // Set message text
-            let messageHTML = latestMessage.text;
-            if (latestMessage.link) {
-                messageHTML += ` <a href="${latestMessage.link}" class="server-message-link" target="_blank">Learn more →</a>`;
-            }
-            textEl.innerHTML = messageHTML;
-            
-            // Update icon based on type
-            const icon = banner.querySelector('.server-message-icon');
-            const iconPaths = {
-                info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-                success: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
-                warning: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
-                error: 'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z'
-            };
-            icon.querySelector('path').setAttribute('d', iconPaths[latestMessage.type] || iconPaths.info);
-            
-            // Store current message ID
-            banner.setAttribute('data-message-id', latestMessage.id);
-        }
-        
-        // Close message handler
-        document.getElementById('closeMessageBtn').addEventListener('click', () => {
-            const banner = document.getElementById('serverMessageBanner');
-            const messageId = parseInt(banner.getAttribute('data-message-id'));
-            
-            // Mark as dismissed
-            const dismissedMessages = JSON.parse(localStorage.getItem('dismissedMessages') || '[]');
-            dismissedMessages.push(messageId);
-            localStorage.setItem('dismissedMessages', JSON.stringify(dismissedMessages));
-            
-            // Hide banner
-            banner.classList.remove('show');
-        });
-        
-        // Load messages on page load
-        loadServerMessages();
-        
-        // Check for new messages every 30 seconds
-        setInterval(loadServerMessages, 30000);
-    </script>
+  ) : (
+    <div class="empty-state">
+      <div class="empty-state-icon">📢</div>
+      <h2 class="empty-state-title">No Active Campaigns</h2>
+      <p class="empty-state-text">Check back soon for new opportunities!</p>
+    </div>
+  )}
 </Layout>
