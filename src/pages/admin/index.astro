@@ -2,7 +2,7 @@
 // src/pages/admin/index.astro
 export const prerender = false;
 
-import { supabase, getSession, getUserProfile, isAdmin } from '../../lib/supabase';
+import { supabase, getSession, getUserProfile } from '../../lib/supabase';
 
 // Check authentication
 const session = await getSession(Astro.cookies);
@@ -10,11 +10,12 @@ if (!session) {
   return Astro.redirect('/admin/login');
 }
 
-// Check if user is admin
-const userIsAdmin = await isAdmin(session.user.id);
-if (!userIsAdmin) {
+const profile = await getUserProfile(session.user.id);
+
+if (profile?.role !== 'admin') {
   return Astro.redirect('/unauthorized');
 }
+
 
 // Fetch dashboard stats
 const { count: totalUsers } = await supabase
