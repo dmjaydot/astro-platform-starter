@@ -1,11 +1,11 @@
 // src/lib/supabase.ts
 // Supabase client for Astro on Netlify
-// Uses environment variables from Netlify dashboard
+// Role-based access via profiles.role (NO admins / creators tables)
 
 import { createClient } from '@supabase/supabase-js';
 import type { AstroCookies } from 'astro';
 
-// Environment variables set in Netlify
+// Environment variables (Netlify)
 const supabaseUrl = import.meta.env.SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.SUPABASE_ANON_KEY;
 const supabaseServiceKey = import.meta.env.SUPABASE_SERVICE_KEY;
@@ -14,22 +14,27 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing SUPABASE_URL or SUPABASE_ANON_KEY');
 }
 
-// Public client (uses anon key, respects RLS)
+// --------------------------------------------------
+// Clients
+// --------------------------------------------------
+
+// Public client (respects RLS)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Admin client (uses service key, bypasses RLS) - use carefully!
-export const supabaseAdmin = supabaseServiceKey 
+// Admin client (bypasses RLS – use ONLY server-side)
+export const supabaseAdmin = supabaseServiceKey
   ? createClient(supabaseUrl, supabaseServiceKey)
   : supabase;
 
-// Get session from cookies
+// --------------------------------------------------
+// Auth Helpers
+// --------------------------------------------------
+
 export async function getSession(cookies: AstroCookies) {
   const accessToken = cookies.get('sb-access-token')?.value;
   const refreshToken = cookies.get('sb-refresh-token')?.value;
 
-  if (!accessToken || !refreshToken) {
-    return null;
-  }
+  if (!accessToken || !refreshToken) return null;
 
   const { data, error } = await supabase.auth.setSession({
     access_token: accessToken,
@@ -44,72 +49,67 @@ export async function getSession(cookies: AstroCookies) {
   return data.session;
 }
 
-// Set auth cookies
 export function setAuthCookies(
-  cookies: AstroCookies, 
-  accessToken: string, 
+  cookies: AstroCookies,
+  accessToken: string,
   refreshToken: string
 ) {
-  const cookieOptions = {
+  const options = {
     path: '/',
     httpOnly: true,
     secure: true,
     sameSite: 'lax' as const,
-    maxAge: 60 * 60 * 24 * 7, // 1 week
+    maxAge: 60 * 60 * 24 * 7, // 7 days
   };
 
-  cookies.set('sb-access-token', accessToken, cookieOptions);
-  cookies.set('sb-refresh-token', refreshToken, cookieOptions);
+  cookies.set('sb-access-token', accessToken, options);
+  cookies.set('sb-refresh-token', refreshToken, options);
 }
 
-// Clear auth cookies
 export function clearAuthCookies(cookies: AstroCookies) {
   cookies.delete('sb-access-token', { path: '/' });
   cookies.delete('sb-refresh-token', { path: '/' });
 }
 
-// Check if user is admin
+// --------------------------------------------------
+// Profile & Role Helpers (SOURCE OF TRUTH)
+// --------------------------------------------------
+
+export async function getUserProfile(userId: string) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('Profile fetch error:', error.message);
+    return null;
+  }
+
+  return data;
+}
+
+// --------------------------------------------------
+// Role Checks (NO extra tables)
+// --------------------------------------------------
+
 export async function isAdmin(userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('admins')
-    .select('id')
-    .eq('auth_id', userId)
-    .single();
-
-  return !error && !!data;
+  const profile = await getUserProfile(userId);
+  return profile?.role === 'admin';
 }
 
-// Check if user is creator
+export async function isManager(userId: string): Promise<boolean> {
+  const profile = await getUserProfile(userId);
+  return profile?.role === 'manager' || profile?.role === 'admin';
+}
+
+export async function isModerator(userId: string): Promise<boolean> {
+  const profile = await getUserProfile(userId);
+  return profile?.role === 'moderator' || profile?.role === 'admin';
+}
+
 export async function isCreator(userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('creators')
-    .select('id')
-    .eq('id', userId)
-    .single();
-
-  return !error && !!data;
-}
-
-// Get creator profile
-export async function getCreatorProfile(userId: string) {
-  const { data, error } = await supabase
-    .from('creators')
-    .select('*')
-    .eq('id', userId)
-    .single();
-
-  if (error) return null;
-  return data;
-}
-
-// Get admin profile
-export async function getAdminProfile(userId: string) {
-  const { data, error } = await supabase
-    .from('admins')
-    .select('*')
-    .eq('auth_id', userId)
-    .single();
-
-  if (error) return null;
-  return data;
+  const profile = await getUserProfile(userId);
+  return profile?.role === 'creator';
 }
