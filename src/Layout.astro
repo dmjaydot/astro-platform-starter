@@ -1,0 +1,283 @@
+---
+// src/layouts/Layout.astro
+import { getSession, getUserProfile, isAdmin } from '../lib/supabase';
+
+const { title } = Astro.props;
+
+// Get current user session and profile
+const session = await getSession(Astro.cookies);
+let userProfile = null;
+let isUserAdmin = false;
+
+if (session?.user) {
+  userProfile = await getUserProfile(session.user.id);
+  isUserAdmin = await isAdmin(session.user.id);
+}
+
+const userRole = userProfile?.role || null;
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Banity</title>
+    <meta name="description" content="Banity connects creators with brands for authentic UGC campaigns.">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style is:global>
+        :root {
+            --color-ink: #0a0a0a;
+            --color-paper: #fafaf8;
+            --color-accent: #2563eb;
+            --color-accent-light: #dbeafe;
+            --color-muted: #6b7280;
+            --color-border: #e5e7eb;
+            --color-success: #10b981;
+            --color-warning: #f59e0b;
+            --color-error: #ef4444;
+            --font-serif: 'Crimson Pro', Georgia, serif;
+            --font-sans: 'DM Sans', -apple-system, sans-serif;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        
+        body {
+            font-family: var(--font-sans);
+            background: var(--color-paper);
+            color: var(--color-ink);
+            line-height: 1.6;
+        }
+        
+        .site-header {
+            position: sticky;
+            top: 0;
+            background: rgba(250, 250, 248, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--color-border);
+            z-index: 100;
+        }
+        
+        .header-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-family: var(--font-serif);
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--color-ink);
+            text-decoration: none;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+        
+        .nav-link {
+            font-size: 0.9375rem;
+            font-weight: 500;
+            color: var(--color-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+            padding: 0.5rem 0;
+        }
+        
+        .nav-link:hover { color: var(--color-accent); }
+        .nav-link.active { color: var(--color-ink); font-weight: 600; }
+        
+        .nav-link.portal-link {
+            background: var(--color-accent-light);
+            color: var(--color-accent);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+        
+        .nav-link.portal-link:hover {
+            background: var(--color-accent);
+            color: white;
+        }
+        
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 1rem;
+            background: white;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .user-menu:hover {
+            border-color: var(--color-accent);
+        }
+        
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--color-accent-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--color-accent);
+        }
+        
+        .user-name {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .role-badge {
+            font-size: 0.6875rem;
+            padding: 0.125rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .role-badge.admin { background: #fee2e2; color: #dc2626; }
+        .role-badge.manager { background: #dbeafe; color: #2563eb; }
+        .role-badge.moderator { background: #fef3c7; color: #d97706; }
+        .role-badge.creator { background: #d1fae5; color: #059669; }
+        
+        .cta-btn {
+            padding: 0.625rem 1.5rem;
+            background: var(--color-accent);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+        
+        .cta-btn:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+        }
+        
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: calc(100vh - 180px);
+        }
+        
+        .footer {
+            border-top: 1px solid var(--color-border);
+            margin-top: 4rem;
+        }
+        
+        .footer-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .footer-text {
+            font-size: 0.875rem;
+            color: var(--color-muted);
+        }
+        
+        .footer-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+        
+        .footer-link {
+            font-size: 0.875rem;
+            color: var(--color-muted);
+            text-decoration: none;
+        }
+        
+        .footer-link:hover { color: var(--color-ink); }
+        
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .header-inner { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/" class="logo">Banity</a>
+            
+            <nav class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/campaigns" class="nav-link">Campaigns</a>
+                <a href="/community" class="nav-link">Community</a>
+                
+                {/* Role-based portal links */}
+                {isUserAdmin && (
+                    <a href="/admin" class="nav-link portal-link">Admin Portal</a>
+                )}
+                {userRole === 'manager' && (
+                    <a href="/campaigns/manage" class="nav-link portal-link">Manager Portal</a>
+                )}
+                {userRole === 'moderator' && (
+                    <a href="/admin/review" class="nav-link portal-link">Mod Queue</a>
+                )}
+            </nav>
+            
+            <div class="nav-right">
+                {session ? (
+                    <div class="user-menu">
+                        <div class="user-avatar">
+                            {userProfile?.full_name?.charAt(0) || session.user.email?.charAt(0).toUpperCase()}
+                        </div>
+                        <span class="user-name">{userProfile?.display_name || userProfile?.full_name || 'User'}</span>
+                        {userRole && <span class={`role-badge ${userRole}`}>{userRole}</span>}
+                    </div>
+                ) : (
+                    <a href="/clips" class="cta-btn">Join Banity</a>
+                )}
+            </div>
+        </div>
+    </header>
+    
+    <main>
+        <slot />
+    </main>
+    
+    <footer class="footer">
+        <div class="footer-inner">
+            <p class="footer-text">© 2025 Banity Ltd. All rights reserved.</p>
+            <nav class="footer-links">
+                <a href="/" class="footer-link">Home</a>
+                <a href="/campaigns" class="footer-link">Campaigns</a>
+                <a href="/community" class="footer-link">Community</a>
+                <a href="/legal" class="footer-link">Legal</a>
+            </nav>
+        </div>
+    </footer>
+</body>
+</html>
