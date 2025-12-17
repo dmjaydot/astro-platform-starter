@@ -1,0 +1,66 @@
+---
+// src/pages/admin/roles.astro
+export const prerender = false;
+
+import AdminLayout from "@/layouts/AdminLayout.astro";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  import.meta.env.PUBLIC_SUPABASE_URL,
+  import.meta.env.SUPABASE_SERVICE_KEY
+);
+
+let message = "";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const userId = form.get("userId");
+  const role = form.get("role");
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ role })
+    .eq("id", userId);
+
+  message = error ? error.message : "Role updated";
+}
+
+const { data: users } = await supabase
+  .from("profiles")
+  .select("id, email, role");
+---
+
+<AdminLayout title="Roles">
+  <h1>Roles</h1>
+
+  {message && <p class="info">{message}</p>}
+
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Update</th>
+      </tr>
+    </thead>
+    <tbody>
+      {users?.map(user => (
+        <tr>
+          <td>{user.email}</td>
+          <td>
+            <form method="POST">
+              <input type="hidden" name="userId" value={user.id} />
+              <select name="role">
+                <option selected={user.role === "user"}>user</option>
+                <option selected={user.role === "moderator"}>moderator</option>
+                <option selected={user.role === "admin"}>admin</option>
+              </select>
+              <button type="submit">Save</button>
+            </form>
+          </td>
+          <td></td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</AdminLayout>
