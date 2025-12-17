@@ -77,8 +77,12 @@ if (Astro.request.method === 'POST') {
           is_active: true
         });
         
-        // Add to admins table
-        const { error: adminError } = await adminClient.from('admins').insert({ id: userId });
+        // Add to admins table (include email!)
+        const { error: adminError } = await adminClient.from('admins').insert({ 
+          id: userId,
+          email: email 
+        });
+        
         if (adminError && !adminError.message.includes('duplicate')) {
           throw adminError;
         }
@@ -90,9 +94,6 @@ if (Astro.request.method === 'POST') {
         errorMessage = `Error: ${err.message}`;
         step = 2;
       }
-    }
-  }
-}
 
 if (isAuthorized && step === 1) step = 2;
 
