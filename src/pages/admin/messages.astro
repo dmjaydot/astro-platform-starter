@@ -1,0 +1,42 @@
+---
+// src/pages/admin/messages.astro
+export const prerender = false;
+
+import AdminLayout from "@/layouts/AdminLayout.astro";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  import.meta.env.PUBLIC_SUPABASE_URL,
+  import.meta.env.SUPABASE_SERVICE_KEY
+);
+
+const { data: messages } = await supabase
+  .from("messages")
+  .select("id, email, subject, body, created_at, is_read")
+  .order("created_at", { ascending: false });
+---
+
+<AdminLayout title="Messages">
+  <h1>Messages</h1>
+
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>From</th>
+        <th>Subject</th>
+        <th>Status</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {messages?.map(msg => (
+        <tr>
+          <td>{msg.email}</td>
+          <td>{msg.subject}</td>
+          <td>{msg.is_read ? "Read" : "Unread"}</td>
+          <td>{new Date(msg.created_at).toLocaleString()}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</AdminLayout>
