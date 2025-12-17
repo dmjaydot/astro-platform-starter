@@ -4,18 +4,46 @@ export const prerender = false;
 
 import { supabase, getSession, getUserProfile } from '../../lib/supabase';
 
-// Check authentication
-const session = await getSession(Astro.cookies);
-if (!session) {
+const masterKey = import.meta.env.ADMIN_MASTER_KEY;
+
+// Handle logout
+if (Astro.url.searchParams.get('logout') === 'true') {
+  Astro.cookies.delete('sb-access-token', { path: '/' });
+  Astro.cookies.delete('sb-refresh-token', { path: '/' });
+  Astro.cookies.delete('admin-master-session', { path: '/' });
   return Astro.redirect('/admin/login');
 }
 
-const profile = await getUserProfile(session.user.id);
+// Check for master key session first (bypasses normal auth)
+const masterSession = Astro.cookies.get('admin-master-session')?.value;
+const isMasterKeySession = masterKey && masterSession === masterKey;
 
-if (profile?.role !== 'admin') {
-  return Astro.redirect('/unauthorized');
+let session = null;
+let profile = null;
+
+if (!isMasterKeySession) {
+  // Normal authentication flow
+  session = await getSession(Astro.cookies);
+  if (!session) {
+    return Astro.redirect('/admin/login');
+  }
+
+  profile = await getUserProfile(session.user.id);
+
+  // Check if user has admin access (admin role or in admins table)
+  const { data: adminRecord } = await supabase
+    .from('admins')
+    .select('id')
+    .eq('id', session.user.id)
+    .maybeSingle();
+
+  const isAdmin = !!adminRecord || profile?.role === 'admin';
+  const isModerator = profile?.role === 'moderator';
+
+  if (!isAdmin && !isModerator) {
+    return Astro.redirect('/unauthorized');
+  }
 }
-
 
 // Fetch dashboard stats
 const { count: totalUsers } = await supabase
@@ -65,10 +93,7 @@ const { data: pendingReviews } = await supabase
       min-height: 100vh;
     }
     
-    .admin-layout {
-      display: flex;
-      min-height: 100vh;
-    }
+    .admin-layout { display: flex; min-height: 100vh; }
     
     .sidebar {
       width: 250px;
@@ -78,21 +103,32 @@ const { data: pendingReviews } = await supabase
       position: fixed;
       height: 100vh;
       overflow-y: auto;
+      display: flex;
+      flex-direction: column;
     }
     
-    .sidebar-logo {
-      font-size: 1.5rem;
-      font-weight: 700;
-      margin-bottom: 2rem;
-      padding-bottom: 1rem;
+    .sidebar-logo { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+    
+    .sidebar-user {
+      font-size: 0.75rem;
+      opacity: 0.7;
+      padding-bottom: 1.5rem;
+      margin-bottom: 1rem;
       border-bottom: 1px solid rgba(255,255,255,0.1);
     }
     
-    .sidebar-nav {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
+    .master-key-badge {
+      display: inline-block;
+      background: #f59e0b;
+      color: #1a1a2e;
+      font-size: 0.625rem;
+      padding: 0.125rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      margin-top: 0.25rem;
     }
+    
+    .sidebar-nav { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
     
     .sidebar-link {
       display: flex;
@@ -105,47 +141,32 @@ const { data: pendingReviews } = await supabase
       transition: all 0.2s;
     }
     
-    .sidebar-link:hover, .sidebar-link.active {
-      background: rgba(255,255,255,0.1);
-      color: white;
-    }
+    .sidebar-link:hover, .sidebar-link.active { background: rgba(255,255,255,0.1); color: white; }
+    .sidebar-link.active { background: #2563eb; }
     
-    .sidebar-link.active {
-      background: #2563eb;
-    }
+    .sidebar-section { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); }
+    .sidebar-section-title { font-size: 0.75rem; text-transform: uppercase; color: rgba(255,255,255,0.5); margin-bottom: 0.75rem; padding: 0 1rem; }
     
-    .sidebar-section {
-      margin-top: 2rem;
-      padding-top: 1rem;
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
+    .sidebar-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); }
     
-    .sidebar-section-title {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      color: rgba(255,255,255,0.5);
-      margin-bottom: 0.75rem;
-      padding: 0 1rem;
-    }
-    
-    .main-content {
-      flex: 1;
-      margin-left: 250px;
-      padding: 2rem;
-    }
-    
-    .page-header {
+    .logout-btn {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 2rem;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      color: #fca5a5;
+      text-decoration: none;
+      border-radius: 8px;
+      width: 100%;
+      transition: all 0.2s;
     }
     
-    .page-title {
-      font-size: 1.75rem;
-      font-weight: 700;
-      color: #1a1a2e;
-    }
+    .logout-btn:hover { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    
+    .main-content { flex: 1; margin-left: 250px; padding: 2rem; }
+    
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+    .page-title { font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }
     
     .back-to-site {
       display: flex;
@@ -158,257 +179,126 @@ const { data: pendingReviews } = await supabase
       color: #666;
       text-decoration: none;
       font-size: 0.875rem;
-      transition: all 0.2s;
     }
     
-    .back-to-site:hover {
-      border-color: #2563eb;
-      color: #2563eb;
-    }
+    .back-to-site:hover { border-color: #2563eb; color: #2563eb; }
     
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-    
-    .stat-card {
-      background: white;
-      padding: 1.5rem;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    }
-    
-    .stat-label {
-      font-size: 0.875rem;
-      color: #666;
-      margin-bottom: 0.5rem;
-    }
-    
-    .stat-value {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #1a1a2e;
-    }
-    
-    .stat-card.highlight {
-      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-    }
-    
-    .stat-card.highlight .stat-label,
-    .stat-card.highlight .stat-value {
-      color: white;
-    }
-    
-    .content-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.5rem;
-    }
-    
-    .panel {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      overflow: hidden;
-    }
-    
-    .panel-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 1.5rem;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    
-    .panel-title {
-      font-size: 1rem;
-      font-weight: 600;
-      color: #1a1a2e;
-    }
-    
-    .panel-link {
-      font-size: 0.875rem;
-      color: #2563eb;
-      text-decoration: none;
-    }
-    
-    .panel-link:hover {
-      text-decoration: underline;
-    }
-    
-    .user-list {
-      padding: 0;
-    }
-    
-    .user-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 1rem 1.5rem;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    
-    .user-item:last-child {
-      border-bottom: none;
-    }
-    
-    .user-info {
+    .master-warning {
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
       display: flex;
       align-items: center;
       gap: 0.75rem;
     }
     
-    .user-avatar {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: #dbeafe;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 600;
-      color: #2563eb;
-    }
+    .master-warning-icon { font-size: 1.25rem; }
+    .master-warning strong { color: #92400e; }
+    .master-warning p { font-size: 0.875rem; color: #a16207; margin-top: 0.25rem; }
+    .master-warning a { color: #92400e; font-weight: 600; }
     
-    .user-name {
-      font-weight: 500;
-    }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
     
-    .user-email {
-      font-size: 0.75rem;
-      color: #666;
-    }
+    .stat-card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+    .stat-label { font-size: 0.875rem; color: #666; margin-bottom: 0.5rem; }
+    .stat-value { font-size: 2rem; font-weight: 700; color: #1a1a2e; }
+    .stat-card.highlight { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
+    .stat-card.highlight .stat-label, .stat-card.highlight .stat-value { color: white; }
     
-    .role-badge {
-      font-size: 0.6875rem;
-      padding: 0.25rem 0.75rem;
-      border-radius: 999px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
+    .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
     
+    .panel { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow: hidden; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0; }
+    .panel-title { font-size: 1rem; font-weight: 600; color: #1a1a2e; }
+    .panel-link { font-size: 0.875rem; color: #2563eb; text-decoration: none; }
+    .panel-link:hover { text-decoration: underline; }
+    
+    .user-list { padding: 0; }
+    .user-item { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0; }
+    .user-item:last-child { border-bottom: none; }
+    .user-info { display: flex; align-items: center; gap: 0.75rem; }
+    .user-avatar { width: 40px; height: 40px; border-radius: 50%; background: #dbeafe; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #2563eb; }
+    .user-name { font-weight: 500; }
+    .user-email { font-size: 0.75rem; color: #666; }
+    
+    .role-badge { font-size: 0.6875rem; padding: 0.25rem 0.75rem; border-radius: 999px; font-weight: 600; text-transform: uppercase; }
     .role-badge.admin { background: #fee2e2; color: #dc2626; }
     .role-badge.manager { background: #dbeafe; color: #2563eb; }
     .role-badge.moderator { background: #fef3c7; color: #d97706; }
     .role-badge.creator { background: #d1fae5; color: #059669; }
     
-    .review-item {
-      padding: 1rem 1.5rem;
-      border-bottom: 1px solid #f0f0f0;
-    }
+    .review-item { padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0; }
+    .review-item:last-child { border-bottom: none; }
+    .review-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem; }
+    .review-title { font-weight: 500; }
+    .review-meta { font-size: 0.75rem; color: #666; }
+    .status-badge { font-size: 0.6875rem; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; background: #fef3c7; color: #d97706; }
+    .empty-state { padding: 2rem; text-align: center; color: #666; }
     
-    .review-item:last-child {
-      border-bottom: none;
-    }
-    
-    .review-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      margin-bottom: 0.5rem;
-    }
-    
-    .review-title {
-      font-weight: 500;
-    }
-    
-    .review-meta {
-      font-size: 0.75rem;
-      color: #666;
-    }
-    
-    .status-badge {
-      font-size: 0.6875rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      font-weight: 600;
-      background: #fef3c7;
-      color: #d97706;
-    }
-    
-    .empty-state {
-      padding: 2rem;
-      text-align: center;
-      color: #666;
-    }
-    
-    @media (max-width: 1024px) {
-      .content-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    
-    @media (max-width: 768px) {
-      .sidebar {
-        display: none;
-      }
-      .main-content {
-        margin-left: 0;
-      }
-    }
+    @media (max-width: 1024px) { .content-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) { .sidebar { display: none; } .main-content { margin-left: 0; } }
   </style>
 </head>
 <body>
   <div class="admin-layout">
     <aside class="sidebar">
       <div class="sidebar-logo">🛡️ Admin</div>
+      <div class="sidebar-user">
+        {isMasterKeySession ? (
+          <>
+            Master Key Session
+            <div class="master-key-badge">⚡ ELEVATED ACCESS</div>
+          </>
+        ) : (
+          <>
+            {profile?.full_name || session?.user?.email || 'Admin'}
+            {profile?.role && <div style="margin-top: 0.25rem; opacity: 0.5;">{profile.role}</div>}
+          </>
+        )}
+      </div>
       
       <nav class="sidebar-nav">
-        <a href="/admin" class="sidebar-link active">
-          <span>📊</span> Dashboard
-        </a>
-        <a href="/admin/users" class="sidebar-link">
-          <span>👥</span> Users
-        </a>
-        <a href="/admin/campaigns" class="sidebar-link">
-          <span>📢</span> Campaigns
-        </a>
-        <a href="/admin/review" class="sidebar-link">
-          <span>✅</span> Review Queue
-        </a>
-        <a href="/admin/communities" class="sidebar-link">
-          <span>💬</span> Communities
-        </a>
+        <a href="/admin" class="sidebar-link active"><span>📊</span> Dashboard</a>
+        <a href="/admin/users" class="sidebar-link"><span>👥</span> Users</a>
+        <a href="/admin/campaigns" class="sidebar-link"><span>📢</span> Campaigns</a>
+        <a href="/admin/review" class="sidebar-link"><span>✅</span> Review Queue</a>
+        <a href="/admin/communities" class="sidebar-link"><span>💬</span> Communities</a>
         
         <div class="sidebar-section">
           <div class="sidebar-section-title">Settings</div>
-          <a href="/admin/messages" class="sidebar-link">
-            <span>📣</span> Server Messages
-          </a>
-          <a href="/admin/settings" class="sidebar-link">
-            <span>⚙️</span> Settings
-          </a>
+          <a href="/admin/messages" class="sidebar-link"><span>📣</span> Server Messages</a>
+          <a href="/admin/settings" class="sidebar-link"><span>⚙️</span> Settings</a>
         </div>
       </nav>
+      
+      <div class="sidebar-footer">
+        <a href="/admin?logout=true" class="logout-btn"><span>🚪</span> Sign Out</a>
+      </div>
     </aside>
     
     <main class="main-content">
       <div class="page-header">
         <h1 class="page-title">Dashboard</h1>
-        <a href="/" class="back-to-site">
-          ← Back to Site
-        </a>
+        <a href="/" class="back-to-site">← Back to Site</a>
       </div>
       
+      {isMasterKeySession && (
+        <div class="master-warning">
+          <span class="master-warning-icon">⚠️</span>
+          <div>
+            <strong>Master Key Session Active</strong>
+            <p>You're using elevated access. Consider creating a regular admin account via <a href="/admin/setup">Admin Setup</a>.</p>
+          </div>
+        </div>
+      )}
+      
       <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Total Users</div>
-          <div class="stat-value">{totalUsers || 0}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Campaigns</div>
-          <div class="stat-value">{totalCampaigns || 0}</div>
-        </div>
-        <div class="stat-card highlight">
-          <div class="stat-label">Pending Reviews</div>
-          <div class="stat-value">{pendingPosts || 0}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Communities</div>
-          <div class="stat-value">{totalCommunities || 0}</div>
-        </div>
+        <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value">{totalUsers || 0}</div></div>
+        <div class="stat-card"><div class="stat-label">Campaigns</div><div class="stat-value">{totalCampaigns || 0}</div></div>
+        <div class="stat-card highlight"><div class="stat-label">Pending Reviews</div><div class="stat-value">{pendingPosts || 0}</div></div>
+        <div class="stat-card"><div class="stat-label">Communities</div><div class="stat-value">{totalCommunities || 0}</div></div>
       </div>
       
       <div class="content-grid">
@@ -422,9 +312,7 @@ const { data: pendingReviews } = await supabase
               recentUsers.map((user) => (
                 <div class="user-item">
                   <div class="user-info">
-                    <div class="user-avatar">
-                      {user.full_name?.charAt(0) || user.email?.charAt(0).toUpperCase()}
-                    </div>
+                    <div class="user-avatar">{user.full_name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</div>
                     <div>
                       <div class="user-name">{user.full_name || 'No name'}</div>
                       <div class="user-email">{user.email}</div>
@@ -452,9 +340,7 @@ const { data: pendingReviews } = await supabase
                     <div class="review-title">{post.title || 'Untitled Post'}</div>
                     <span class="status-badge">Pending</span>
                   </div>
-                  <div class="review-meta">
-                    by {post.profiles?.full_name || 'Unknown'} • {post.campaigns?.title || 'Unknown Campaign'}
-                  </div>
+                  <div class="review-meta">by {post.profiles?.full_name || 'Unknown'} • {post.campaigns?.title || 'Unknown Campaign'}</div>
                 </div>
               ))
             ) : (
