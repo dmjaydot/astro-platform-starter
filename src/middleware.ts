@@ -1,6 +1,6 @@
 // src/middleware.ts
 import { defineMiddleware } from "astro:middleware";
-import { supabase, getSession, getUserProfile } from "./lib/supabase";
+import { getSession, hasAdminAccess } from "./lib/supabase";
 
 export const onRequest = defineMiddleware(async (context, next) => {
   const masterKey = import.meta.env.ADMIN_MASTER_KEY;
@@ -28,39 +28,29 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const masterSession = context.cookies.get('admin-master-session')?.value;
   
   if (masterKey && masterSession === masterKey) {
-    // Master key session is valid - grant full admin access
     context.locals.isMasterKeySession = true;
     context.locals.session = null;
+    context.locals.profile = null;
     context.locals.isAdmin = true;
+    context.locals.isModerator = false;
     return next();
   }
 
-  // Normal authentication using lib/supabase helpers
+  // Normal authentication
   const session = await getSession(context.cookies);
 
   if (!session) {
     return context.redirect('/admin/login');
   }
 
-  // Get user profile and check admin status
-  const profile = await getUserProfile(session.user.id);
-  
-  // Check if user is in admins table
-  const { data: adminRecord } = await supabase
-    .from("admins")
-    .select("id")
-    .eq("id", session.user.id)
-    .maybeSingle();
+  // Get admin access status using helper
+  const { isAdmin, isModerator, profile } = await hasAdminAccess(session.user.id);
 
-  const isAdmin = !!adminRecord || profile?.role === "admin";
-  const isModerator = profile?.role === "moderator";
-
-  // Admin-only routes
+  // Route-based access control
   const adminOnlyRoutes = ['/admin/users', '/admin/settings', '/admin/messages'];
   const isAdminOnlyRoute = adminOnlyRoutes.some(route => pathname.startsWith(route));
 
-  // Moderator-accessible routes  
-  const modRoutes = ['/admin/review'];
+  const modRoutes = ['/admin/review', '/admin/campaigns', '/admin/communities'];
   const isModRoute = modRoutes.some(route => pathname.startsWith(route));
 
   if (isAdminOnlyRoute && !isAdmin) {
@@ -71,7 +61,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return context.redirect('/unauthorized');
   }
 
-  // For general admin routes, require admin or moderator
   if (!isAdmin && !isModerator) {
     return context.redirect('/unauthorized');
   }
