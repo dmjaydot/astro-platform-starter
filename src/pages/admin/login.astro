@@ -7,7 +7,7 @@ import { supabase, getSession, hasAdminAccess } from '../../lib/supabase';
 
 const masterKey = import.meta.env.ADMIN_MASTER_KEY;
 const errorParam = Astro.url.searchParams.get('error');
-const errorMessages: Record<string, string> = {
+const errorMessages = {
   session_expired: 'Your session has expired. Please log in again.',
   auth_failed: 'Authentication failed. Please try again.',
   access_check_failed: 'Unable to verify permissions. Please try again.',
