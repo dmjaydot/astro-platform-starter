@@ -3,12 +3,19 @@
 export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
-import { supabase, getSession, getUserProfile } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 
-const session = await getSession(Astro.cookies);
-let userProfile = null;
-if (session) {
-  userProfile = await getUserProfile(session.user.id);
+// --------------------------------------------------
+// Auth & role data (from middleware)
+// --------------------------------------------------
+const session = Astro.locals.session;
+const profile = Astro.locals.profile;
+const isAdmin = Astro.locals.isAdmin;
+const isModerator = Astro.locals.isModerator;
+
+// Safety fallback (middleware should already enforce this)
+if (!session || (!isAdmin && !isModerator)) {
+  return Astro.redirect('/unauthorized');
 }
 
 // Fetch active campaigns
