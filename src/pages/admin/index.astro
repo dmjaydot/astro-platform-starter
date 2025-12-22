@@ -24,38 +24,99 @@ if (!isMasterKeySession && !session) {
   return Astro.redirect('/admin/login');
 }
 
-// Fetch dashboard stats
-const { count: totalUsers } = await supabase
-  .from('profiles')
-  .select('*', { count: 'exact', head: true });
+// Initialize stats with defaults
+let stats = {
+  totalUsers: 0,
+  totalCampaigns: 0,
+  pendingPosts: 0,
+  totalCommunities: 0
+};
+let recentUsers: any[] = [];
+let pendingReviews: any[] = [];
+let errors: string[] = [];
 
-const { count: totalCampaigns } = await supabase
-  .from('campaigns')
-  .select('*', { count: 'exact', head: true });
+// Fetch dashboard stats with error handling
+try {
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact', head: true });
+  
+  if (error) throw error;
+  stats.totalUsers = count || 0;
+} catch (err: any) {
+  console.error('Failed to fetch users count:', err.message);
+  errors.push('Unable to load user count');
+}
 
-const { count: pendingPosts } = await supabase
-  .from('posts')
-  .select('*', { count: 'exact', head: true })
-  .eq('status', 'pending');
+try {
+  const { count, error } = await supabase
+    .from('campaigns')
+    .select('*', { count: 'exact', head: true });
+  
+  if (error) throw error;
+  stats.totalCampaigns = count || 0;
+} catch (err: any) {
+  console.error('Failed to fetch campaigns count:', err.message);
+  errors.push('Unable to load campaign count');
+}
 
-const { count: totalCommunities } = await supabase
-  .from('communities')
-  .select('*', { count: 'exact', head: true });
+try {
+  const { count, error } = await supabase
+    .from('posts')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'pending');
+  
+  if (error) throw error;
+  stats.pendingPosts = count || 0;
+} catch (err: any) {
+  console.error('Failed to fetch pending posts:', err.message);
+  errors.push('Unable to load pending reviews count');
+}
 
-// Recent users
-const { data: recentUsers } = await supabase
-  .from('profiles')
-  .select('*')
-  .order('created_at', { ascending: false })
-  .limit(5);
+try {
+  const { count, error } = await supabase
+    .from('communities')
+    .select('*', { count: 'exact', head: true });
+  
+  if (error) throw error;
+  stats.totalCommunities = count || 0;
+} catch (err: any) {
+  console.error('Failed to fetch communities count:', err.message);
+  errors.push('Unable to load community count');
+}
 
-// Pending posts for review
-const { data: pendingReviews } = await supabase
-  .from('posts')
-  .select('*, profiles!creator_id(full_name, email), campaigns(title)')
-  .eq('status', 'pending')
-  .order('created_at', { ascending: false })
-  .limit(5);
+// Fetch recent users with error handling
+try {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(5);
+  
+  if (error) throw error;
+  recentUsers = data || [];
+} catch (err: any) {
+  console.error('Failed to fetch recent users:', err.message);
+  errors.push('Unable to load recent users');
+}
+
+// Fetch pending reviews with error handling
+try {
+  const { data, error } = await supabase
+    .from('posts')
+    .select('*, profiles!creator_id(full_name, email), campaigns(title)')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(5);
+  
+  if (error) throw error;
+  pendingReviews = data || [];
+} catch (err: any) {
+  console.error('Failed to fetch pending reviews:', err.message);
+  errors.push('Unable to load pending reviews');
+}
+
+const hasErrors = errors.length > 0;
 ---
 
 <!DOCTYPE html>
@@ -162,25 +223,50 @@ const { data: pendingReviews } = await supabase
     
     .back-to-site:hover { border-color: #2563eb; color: #2563eb; }
     
-    .master-warning {
-      background: #fef3c7;
-      border: 1px solid #fcd34d;
-      border-radius: 8px;
+    .alert {
       padding: 1rem;
+      border-radius: 8px;
       margin-bottom: 1.5rem;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 0.75rem;
     }
     
-    .master-warning-icon { font-size: 1.25rem; }
-    .master-warning strong { color: #92400e; }
-    .master-warning p { font-size: 0.875rem; color: #a16207; margin-top: 0.25rem; }
-    .master-warning a { color: #92400e; font-weight: 600; }
+    .alert-icon { font-size: 1.25rem; flex-shrink: 0; }
+    .alert-content { flex: 1; }
+    .alert-content strong { display: block; margin-bottom: 0.25rem; }
+    .alert-content p { font-size: 0.875rem; margin: 0; }
+    .alert-content ul { font-size: 0.875rem; margin: 0.5rem 0 0 1.25rem; }
+    .alert-content a { color: inherit; font-weight: 600; }
+    
+    .alert-warning {
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      color: #92400e;
+    }
+    
+    .alert-error {
+      background: #fee2e2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+    
+    .alert-dismiss {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 0.25rem;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+    
+    .alert-dismiss:hover { opacity: 1; }
     
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
     
     .stat-card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+    .stat-card.error { opacity: 0.6; }
     .stat-label { font-size: 0.875rem; color: #666; margin-bottom: 0.5rem; }
     .stat-value { font-size: 2rem; font-weight: 700; color: #1a1a2e; }
     .stat-card.highlight { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
@@ -189,6 +275,7 @@ const { data: pendingReviews } = await supabase
     .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
     
     .panel { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow: hidden; }
+    .panel.error { opacity: 0.6; }
     .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0; }
     .panel-title { font-size: 1rem; font-weight: 600; color: #1a1a2e; }
     .panel-link { font-size: 0.875rem; color: #2563eb; text-decoration: none; }
@@ -214,7 +301,26 @@ const { data: pendingReviews } = await supabase
     .review-title { font-weight: 500; }
     .review-meta { font-size: 0.75rem; color: #666; }
     .status-badge { font-size: 0.6875rem; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; background: #fef3c7; color: #d97706; }
+    
     .empty-state { padding: 2rem; text-align: center; color: #666; }
+    .error-state { padding: 2rem; text-align: center; color: #991b1b; background: #fee2e2; }
+    
+    .retry-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .retry-btn:hover { background: #1d4ed8; }
     
     @media (max-width: 1024px) { .content-grid { grid-template-columns: 1fr; } }
     @media (max-width: 768px) { .sidebar { display: none; } .main-content { margin-left: 0; } }
@@ -264,20 +370,49 @@ const { data: pendingReviews } = await supabase
       </div>
       
       {isMasterKeySession && (
-        <div class="master-warning">
-          <span class="master-warning-icon">⚠️</span>
-          <div>
+        <div class="alert alert-warning">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-content">
             <strong>Master Key Session Active</strong>
             <p>You're using elevated access. Consider creating a regular admin account via <a href="/admin/setup">Admin Setup</a>.</p>
           </div>
         </div>
       )}
       
+      {hasErrors && (
+        <div class="alert alert-error">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-content">
+            <strong>Some data failed to load</strong>
+            <ul>
+              {errors.map((err) => <li>{err}</li>)}
+            </ul>
+          </div>
+          <button class="alert-dismiss" onclick="location.reload()" title="Retry">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+      )}
+      
       <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value">{totalUsers || 0}</div></div>
-        <div class="stat-card"><div class="stat-label">Campaigns</div><div class="stat-value">{totalCampaigns || 0}</div></div>
-        <div class="stat-card highlight"><div class="stat-label">Pending Reviews</div><div class="stat-value">{pendingPosts || 0}</div></div>
-        <div class="stat-card"><div class="stat-label">Communities</div><div class="stat-value">{totalCommunities || 0}</div></div>
+        <div class="stat-card">
+          <div class="stat-label">Total Users</div>
+          <div class="stat-value">{stats.totalUsers}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Campaigns</div>
+          <div class="stat-value">{stats.totalCampaigns}</div>
+        </div>
+        <div class="stat-card highlight">
+          <div class="stat-label">Pending Reviews</div>
+          <div class="stat-value">{stats.pendingPosts}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Communities</div>
+          <div class="stat-value">{stats.totalCommunities}</div>
+        </div>
       </div>
       
       <div class="content-grid">
@@ -287,19 +422,29 @@ const { data: pendingReviews } = await supabase
             <a href="/admin/users" class="panel-link">View All →</a>
           </div>
           <div class="user-list">
-            {recentUsers && recentUsers.length > 0 ? (
+            {recentUsers.length > 0 ? (
               recentUsers.map((user) => (
                 <div class="user-item">
                   <div class="user-info">
-                    <div class="user-avatar">{user.full_name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</div>
+                    <div class="user-avatar">{user.full_name?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || '?'}</div>
                     <div>
                       <div class="user-name">{user.full_name || 'No name'}</div>
-                      <div class="user-email">{user.email}</div>
+                      <div class="user-email">{user.email || 'No email'}</div>
                     </div>
                   </div>
-                  <span class={`role-badge ${user.role}`}>{user.role}</span>
+                  <span class={`role-badge ${user.role || 'creator'}`}>{user.role || 'creator'}</span>
                 </div>
               ))
+            ) : errors.includes('Unable to load recent users') ? (
+              <div class="error-state">
+                <p>Failed to load users</p>
+                <button class="retry-btn" onclick="location.reload()">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Retry
+                </button>
+              </div>
             ) : (
               <div class="empty-state">No users yet</div>
             )}
@@ -312,7 +457,7 @@ const { data: pendingReviews } = await supabase
             <a href="/admin/review" class="panel-link">View All →</a>
           </div>
           <div class="review-list">
-            {pendingReviews && pendingReviews.length > 0 ? (
+            {pendingReviews.length > 0 ? (
               pendingReviews.map((post) => (
                 <div class="review-item">
                   <div class="review-header">
@@ -322,6 +467,16 @@ const { data: pendingReviews } = await supabase
                   <div class="review-meta">by {post.profiles?.full_name || 'Unknown'} • {post.campaigns?.title || 'Unknown Campaign'}</div>
                 </div>
               ))
+            ) : errors.includes('Unable to load pending reviews') ? (
+              <div class="error-state">
+                <p>Failed to load reviews</p>
+                <button class="retry-btn" onclick="location.reload()">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Retry
+                </button>
+              </div>
             ) : (
               <div class="empty-state">No pending reviews 🎉</div>
             )}
