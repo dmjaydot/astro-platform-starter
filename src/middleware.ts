@@ -1,6 +1,6 @@
 // src/middleware.ts
 import { defineMiddleware } from "astro:middleware";
-import { getSession, hasAdminAccess } from "./lib/supabase";
+import { supabase, getSession, hasAdminAccess } from "./lib/supabase";
 
 export const onRequest = defineMiddleware(async (context, next) => {
   const masterKey = import.meta.env.ADMIN_MASTER_KEY;
@@ -13,6 +13,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     '/api/auth',
     '/clips',
     '/',
+    '/unauthorized',
+    '/404',
   ];
   
   const isPublicRoute = publicRoutes.some(route => 
@@ -37,14 +39,74 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   // Normal authentication
-  const session = await getSession(context.cookies);
+  const accessToken = context.cookies.get('sb-access-token')?.value;
+  const refreshToken = context.cookies.get('sb-refresh-token')?.value;
+
+  if (!accessToken || !refreshToken) {
+    return context.redirect('/admin/login');
+  }
+
+  // Try to get/refresh session
+  let session = null;
+  
+  try {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      console.error('Session error:', error.message);
+      
+      // Clear invalid cookies
+      context.cookies.delete('sb-access-token', { path: '/' });
+      context.cookies.delete('sb-refresh-token', { path: '/' });
+      
+      return context.redirect('/admin/login?error=session_expired');
+    }
+
+    session = data.session;
+
+    // If tokens were refreshed, update cookies
+    if (session && (session.access_token !== accessToken || session.refresh_token !== refreshToken)) {
+      context.cookies.set('sb-access-token', session.access_token, {
+        path: '/',
+        httpOnly: true,
+        secure: import.meta.env.PROD,
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+      });
+      context.cookies.set('sb-refresh-token', session.refresh_token, {
+        path: '/',
+        httpOnly: true,
+        secure: import.meta.env.PROD,
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 7,
+      });
+    }
+  } catch (err) {
+    console.error('Auth error:', err);
+    return context.redirect('/admin/login?error=auth_failed');
+  }
 
   if (!session) {
     return context.redirect('/admin/login');
   }
 
   // Get admin access status using helper
-  const { isAdmin, isModerator, profile } = await hasAdminAccess(session.user.id);
+  let isAdmin = false;
+  let isModerator = false;
+  let profile = null;
+
+  try {
+    const accessResult = await hasAdminAccess(session.user.id);
+    isAdmin = accessResult.isAdmin;
+    isModerator = accessResult.isModerator;
+    profile = accessResult.profile;
+  } catch (err) {
+    console.error('Failed to check admin access:', err);
+    return context.redirect('/admin/login?error=access_check_failed');
+  }
 
   // Route-based access control
   const adminOnlyRoutes = ['/admin/users', '/admin/settings', '/admin/messages'];
