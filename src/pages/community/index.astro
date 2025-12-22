@@ -3,23 +3,35 @@
 export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
-import { supabase, getSession, getUserProfile } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 
-const session = await getSession(Astro.cookies);
-let userProfile = null;
+// --------------------------------------------------
+// Auth & role data (from middleware)
+// --------------------------------------------------
+const session = Astro.locals.session;
+const profile = Astro.locals.profile;
+const isAdmin = Astro.locals.isAdmin;
+const isModerator = Astro.locals.isModerator;
+
+// Safety fallback (middleware should already enforce this)
+if (!session) {
+  // If you want this page public, you can skip redirect
+  // For now, just keep session null
+}
+
+let userProfile = profile || null;
+
+// Get communities the user has joined
 let userCommunities: string[] = [];
-
 if (session) {
-  userProfile = await getUserProfile(session.user.id);
-  
-  // Get communities user has joined
   const { data: memberships } = await supabase
     .from('community_members')
     .select('community_id')
     .eq('user_id', session.user.id);
-  
+
   userCommunities = memberships?.map(m => m.community_id) || [];
 }
+
 
 // Handle join/leave
 let message = '';
