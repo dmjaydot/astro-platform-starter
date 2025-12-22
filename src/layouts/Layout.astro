@@ -1,88 +1,67 @@
 ---
-// src/layouts/Layout.astro
-
-const { title } = Astro.props;
-
-// Auth data injected by middleware
-const session = Astro.locals.session ?? null;
-const userProfile = Astro.locals.userProfile ?? null;
-const isUserAdmin = Astro.locals.isAdmin ?? false;
+const { title, session = null, userProfile = null, isUserAdmin = false } = Astro.props;
 
 const userRole = userProfile?.role ?? null;
 ---
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} - Banity</title>
-    <meta name="description" content="Banity connects creators with brands for authentic UGC campaigns.">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title} - Banity</title>
+  <meta name="description" content="Banity connects creators with brands for authentic UGC campaigns.">
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="site-header">
-        <div class="header-inner">
-            <a href="/" class="logo">Banity</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="logo">Banity</a>
 
-            <nav class="nav-links">
-                <a href="/" class="nav-link">Home</a>
-                <a href="/campaigns" class="nav-link">Campaigns</a>
-                <a href="/community" class="nav-link">Community</a>
+      <nav class="nav-links">
+        <a href="/" class="nav-link">Home</a>
+        <a href="/campaigns" class="nav-link">Campaigns</a>
+        <a href="/community" class="nav-link">Community</a>
 
-                <!-- Role-based portal links -->
-                {isUserAdmin && (
-                    <a href="/admin" class="nav-link portal-link">Admin Portal</a>
-                )}
-                {userRole === 'manager' && (
-                    <a href="/campaigns/manage" class="nav-link portal-link">Manager Portal</a>
-                )}
-                {userRole === 'moderator' && (
-                    <a href="/admin/review" class="nav-link portal-link">Mod Queue</a>
-                )}
-            </nav>
+        {isUserAdmin && <a href="/admin" class="nav-link portal-link">Admin Portal</a>}
+        {userRole === 'manager' && <a href="/campaigns/manage" class="nav-link portal-link">Manager Portal</a>}
+        {userRole === 'moderator' && <a href="/admin/review" class="nav-link portal-link">Mod Queue</a>}
+      </nav>
 
-            <div class="nav-right">
-                {session ? (
-                    <div class="user-menu">
-                        <div class="user-avatar">
-                            {userProfile?.full_name?.charAt(0) ||
-                             session.user.email?.charAt(0).toUpperCase()}
-                        </div>
-                        <span class="user-name">
-                            {userProfile?.display_name ||
-                             userProfile?.full_name ||
-                             'User'}
-                        </span>
-                        {userRole && (
-                            <span class={`role-badge ${userRole}`}>
-                                {userRole}
-                            </span>
-                        )}
-                    </div>
-                ) : (
-                    <a href="/clips" class="cta-btn">Join Banity</a>
-                )}
+      <div class="nav-right">
+        {session ? (
+          <div class="user-menu">
+            <div class="user-avatar">
+              {userProfile?.full_name?.charAt(0) || session.user.email?.charAt(0).toUpperCase()}
             </div>
-        </div>
-    </header>
+            <span class="user-name">
+              {userProfile?.display_name || userProfile?.full_name || 'User'}
+            </span>
+            {userRole && <span class={`role-badge ${userRole}`}>{userRole}</span>}
+          </div>
+        ) : (
+          <a href="/clips" class="cta-btn">Join Banity</a>
+        )}
+      </div>
+    </div>
+  </header>
 
-    <main>
-        <slot />
-    </main>
+  <main>
+    <slot />
+  </main>
 
-    <footer class="footer">
-        <div class="footer-inner">
-            <p class="footer-text">© 2025 Banity Ltd. All rights reserved.</p>
-            <nav class="footer-links">
-                <a href="/" class="footer-link">Home</a>
-                <a href="/campaigns" class="footer-link">Campaigns</a>
-                <a href="/community" class="footer-link">Community</a>
-                <a href="/legal" class="footer-link">Legal</a>
-            </nav>
-        </div>
-    </footer>
+  <footer class="footer">
+    <div class="footer-inner">
+      <p class="footer-text">© 2025 Banity Ltd. All rights reserved.</p>
+      <nav class="footer-links">
+        <a href="/" class="footer-link">Home</a>
+        <a href="/campaigns" class="footer-link">Campaigns</a>
+        <a href="/community" class="footer-link">Community</a>
+        <a href="/legal" class="footer-link">Legal</a>
+      </nav>
+    </div>
+  </footer>
 </body>
 </html>
