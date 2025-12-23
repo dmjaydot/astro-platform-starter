@@ -246,32 +246,3 @@ if (Astro.request.method === 'POST') {
     .quick-link span:first-child { font-size: 1.5rem; }
   </style>
 </AdminLayout>
-```
-
----
-
-## Summary
-
-| File | Issue | Fix |
-|------|-------|-----|
-| `messages.astro` | Wrong env var, no auth check | Use shared supabase, add master key check |
-| `settings.astro` | Didn't exist (404) | Created new page |
-
----
-
-## Complete Admin File Structure
-```
-src/
-├── layouts/
-│   └── AdminLayout.astro     ✅
-└── pages/
-    └── admin/
-        ├── index.astro       ✅ Dashboard
-        ├── login.astro       ✅ Login
-        ├── setup.astro       ✅ Setup (fix env vars)
-        ├── users.astro       ✅ FIXED
-        ├── communities.astro ✅ FIXED
-        ├── campaigns.astro   ✅ NEW
-        ├── review.astro      ✅ FIXED
-        ├── messages.astro    ✅ FIXED
-        └── settings.astro    ✅ NEW
