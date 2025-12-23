@@ -13,45 +13,546 @@ if (!isMasterKeySession && !session) {
   return Astro.redirect('/admin/login');
 }
 
+// Handle user actions
+let actionMessage = '';
+let actionError = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const userId = form.get('userId') as string;
+  const action = form.get('action') as string;
+  
+  if (userId && action) {
+    if (action === 'toggle_active') {
+      const { data: user } = await supabase
+        .from('profiles')
+        .select('is_active')
+        .eq('id', userId)
+        .single();
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_active: !user?.is_active })
+        .eq('id', userId);
+      
+      if (error) actionError = error.message;
+      else actionMessage = `User ${user?.is_active ? 'disabled' : 'enabled'} successfully.`;
+    }
+    
+    if (action === 'make_admin') {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: 'admin' })
+        .eq('id', userId);
+      
+      if (error) actionError = error.message;
+      else actionMessage = 'User promoted to admin.';
+    }
+    
+    if (action === 'make_moderator') {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: 'moderator' })
+        .eq('id', userId);
+      
+      if (error) actionError = error.message;
+      else actionMessage = 'User promoted to moderator.';
+    }
+    
+    if (action === 'make_creator') {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: 'creator' })
+        .eq('id', userId);
+      
+      if (error) actionError = error.message;
+      else actionMessage = 'User role set to creator.';
+    }
+  }
+}
+
+// Fetch all users
 const { data: users, error } = await supabase
   .from("profiles")
-  .select("id, email, full_name, role, is_active, created_at")
+  .select("id, email, full_name, role, is_active, is_verified, avatar_url, bio, created_at")
   .order("created_at", { ascending: false });
+
+// Calculate stats
+const totalUsers = users?.length || 0;
+const activeUsers = users?.filter(u => u.is_active).length || 0;
+const verifiedUsers = users?.filter(u => u.is_verified).length || 0;
+const adminCount = users?.filter(u => u.role === 'admin').length || 0;
+const modCount = users?.filter(u => u.role === 'moderator').length || 0;
+const creatorCount = users?.filter(u => u.role === 'creator').length || 0;
+
+// Get filter from URL
+const filter = Astro.url.searchParams.get('filter') || 'all';
+const filteredUsers = users?.filter(user => {
+  if (filter === 'all') return true;
+  if (filter === 'active') return user.is_active;
+  if (filter === 'inactive') return !user.is_active;
+  if (filter === 'verified') return user.is_verified;
+  if (filter === 'admin') return user.role === 'admin';
+  if (filter === 'moderator') return user.role === 'moderator';
+  if (filter === 'creator') return user.role === 'creator';
+  return true;
+});
 ---
 
 <AdminLayout title="Users">
+  {actionMessage && <div class="alert success">{actionMessage}</div>}
+  {actionError && <div class="alert error">{actionError}</div>}
   {error && <div class="alert error">{error.message}</div>}
   
-  {users && users.length > 0 ? (
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>Status</th>
-          <th>Joined</th>
-        </tr>
-      </thead>
-      <tbody>
-        {users.map(user => (
-          <tr>
-            <td>{user.full_name || '—'}</td>
-            <td>{user.email}</td>
-            <td><span class={`badge ${user.role || 'creator'}`}>{user.role || 'creator'}</span></td>
-            <td><span class={`badge ${user.is_active ? 'active' : 'disabled'}`}>{user.is_active ? 'Active' : 'Disabled'}</span></td>
-            <td>{new Date(user.created_at).toLocaleDateString()}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  ) : (
-    <div class="panel">
-      <div class="empty-state">
-        <div class="empty-state-icon">👥</div>
-        <div class="empty-state-title">No users yet</div>
-        <p>Users will appear here once they sign up.</p>
+  <!-- Stats Cards -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon">👥</div>
+      <div class="stat-content">
+        <div class="stat-value">{totalUsers}</div>
+        <div class="stat-label">Total Users</div>
       </div>
     </div>
-  )}
+    <div class="stat-card">
+      <div class="stat-icon">✅</div>
+      <div class="stat-content">
+        <div class="stat-value">{activeUsers}</div>
+        <div class="stat-label">Active</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">🛡️</div>
+      <div class="stat-content">
+        <div class="stat-value">{adminCount + modCount}</div>
+        <div class="stat-label">Staff</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">⭐</div>
+      <div class="stat-content">
+        <div class="stat-value">{verifiedUsers}</div>
+        <div class="stat-label">Verified</div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Filters -->
+  <div class="filters-bar">
+    <div class="filter-tabs">
+      <a href="/admin/users" class:list={["filter-tab", { active: filter === 'all' }]}>All ({totalUsers})</a>
+      <a href="/admin/users?filter=active" class:list={["filter-tab", { active: filter === 'active' }]}>Active ({activeUsers})</a>
+      <a href="/admin/users?filter=inactive" class:list={["filter-tab", { active: filter === 'inactive' }]}>Inactive ({totalUsers - activeUsers})</a>
+      <a href="/admin/users?filter=admin" class:list={["filter-tab", { active: filter === 'admin' }]}>Admins ({adminCount})</a>
+      <a href="/admin/users?filter=moderator" class:list={["filter-tab", { active: filter === 'moderator' }]}>Moderators ({modCount})</a>
+      <a href="/admin/users?filter=creator" class:list={["filter-tab", { active: filter === 'creator' }]}>Creators ({creatorCount})</a>
+    </div>
+  </div>
+  
+  <!-- Users List -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2 class="panel-title">
+        {filter === 'all' ? 'All Users' : `${filter.charAt(0).toUpperCase() + filter.slice(1)} Users`}
+      </h2>
+      <span class="panel-count">{filteredUsers?.length || 0} users</span>
+    </div>
+    
+    {filteredUsers && filteredUsers.length > 0 ? (
+      <div class="users-list">
+        {filteredUsers.map(user => (
+          <div class="user-card">
+            <div class="user-main">
+              <div class="user-avatar">
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.full_name || 'User'} />
+                ) : (
+                  <span>{user.full_name?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || '?'}</span>
+                )}
+                {user.is_verified && <div class="verified-badge" title="Verified">✓</div>}
+              </div>
+              
+              <div class="user-info">
+                <div class="user-name">
+                  {user.full_name || 'No name'}
+                  {!user.is_active && <span class="inactive-tag">Disabled</span>}
+                </div>
+                <div class="user-email">{user.email}</div>
+                {user.bio && <div class="user-bio">{user.bio.substring(0, 80)}{user.bio.length > 80 ? '...' : ''}</div>}
+              </div>
+            </div>
+            
+            <div class="user-meta">
+              <span class={`role-badge ${user.role || 'creator'}`}>{user.role || 'creator'}</span>
+              <span class="user-date">Joined {new Date(user.created_at).toLocaleDateString()}</span>
+            </div>
+            
+            <div class="user-actions">
+              <div class="dropdown">
+                <button class="btn btn-sm btn-secondary dropdown-trigger">
+                  Actions ▾
+                </button>
+                <div class="dropdown-menu">
+                  <form method="POST">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <button type="submit" name="action" value="toggle_active" class="dropdown-item">
+                      {user.is_active ? '🚫 Disable User' : '✅ Enable User'}
+                    </button>
+                  </form>
+                  <div class="dropdown-divider"></div>
+                  <form method="POST">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <button type="submit" name="action" value="make_admin" class="dropdown-item">
+                      👑 Make Admin
+                    </button>
+                  </form>
+                  <form method="POST">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <button type="submit" name="action" value="make_moderator" class="dropdown-item">
+                      🛡️ Make Moderator
+                    </button>
+                  </form>
+                  <form method="POST">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <button type="submit" name="action" value="make_creator" class="dropdown-item">
+                      🎨 Set as Creator
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div class="empty-state">
+        <div class="empty-state-icon">👥</div>
+        <div class="empty-state-title">No users found</div>
+        <p>No users match the selected filter.</p>
+      </div>
+    )}
+  </div>
+  
+  <style>
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+    
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    
+    .stat-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+    
+    .filters-bar {
+      background: white;
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    
+    .filter-tabs {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    
+    .filter-tab {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      text-decoration: none;
+      color: #6b7280;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .filter-tab:hover {
+      background: #f3f4f6;
+      color: #1a1a2e;
+    }
+    
+    .filter-tab.active {
+      background: #2563eb;
+      color: white;
+    }
+    
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .panel-count {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+    
+    .users-list {
+      padding: 0;
+    }
+    
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background 0.2s;
+    }
+    
+    .user-card:last-child {
+      border-bottom: none;
+    }
+    
+    .user-card:hover {
+      background: #f9fafb;
+    }
+    
+    .user-main {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .user-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #dbeafe 0%, #c7d2fe 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 1.25rem;
+      color: #2563eb;
+      position: relative;
+      flex-shrink: 0;
+    }
+    
+    .user-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    
+    .verified-badge {
+      position: absolute;
+      bottom: -2px;
+      right: -2px;
+      width: 18px;
+      height: 18px;
+      background: #2563eb;
+      border: 2px solid white;
+      border-radius: 50%;
+      color: white;
+      font-size: 0.625rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .user-info {
+      min-width: 0;
+    }
+    
+    .user-name {
+      font-weight: 600;
+      color: #1a1a2e;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .inactive-tag {
+      font-size: 0.625rem;
+      padding: 0.125rem 0.5rem;
+      background: #fee2e2;
+      color: #dc2626;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    
+    .user-email {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+    
+    .user-bio {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-top: 0.25rem;
+    }
+    
+    .user-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.5rem;
+      min-width: 120px;
+    }
+    
+    .role-badge {
+      font-size: 0.6875rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .role-badge.admin { background: #fee2e2; color: #dc2626; }
+    .role-badge.moderator { background: #fef3c7; color: #d97706; }
+    .role-badge.manager { background: #dbeafe; color: #2563eb; }
+    .role-badge.creator { background: #d1fae5; color: #059669; }
+    
+    .user-date {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+    
+    .user-actions {
+      position: relative;
+    }
+    
+    .dropdown {
+      position: relative;
+    }
+    
+    .dropdown-trigger {
+      cursor: pointer;
+    }
+    
+    .dropdown-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 0.5rem;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      min-width: 180px;
+      z-index: 50;
+      display: none;
+    }
+    
+    .dropdown:hover .dropdown-menu,
+    .dropdown:focus-within .dropdown-menu {
+      display: block;
+    }
+    
+    .dropdown-item {
+      display: block;
+      width: 100%;
+      padding: 0.625rem 1rem;
+      text-align: left;
+      border: none;
+      background: none;
+      font-size: 0.875rem;
+      color: #374151;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .dropdown-item:hover {
+      background: #f3f4f6;
+    }
+    
+    .dropdown-item:first-child {
+      border-radius: 8px 8px 0 0;
+    }
+    
+    .dropdown-item:last-child {
+      border-radius: 0 0 8px 8px;
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.25rem 0;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #6b7280;
+    }
+    
+    .empty-state-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    
+    .empty-state-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.5rem;
+    }
+    
+    @media (max-width: 1024px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .user-card {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      
+      .user-meta {
+        flex-direction: row;
+        align-items: center;
+        width: 100%;
+        margin-top: 0.5rem;
+      }
+      
+      .user-actions {
+        margin-top: 0.5rem;
+        width: 100%;
+      }
+      
+      .user-actions .btn {
+        width: 100%;
+      }
+    }
+  </style>
 </AdminLayout>
