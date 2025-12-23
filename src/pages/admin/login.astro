@@ -256,10 +256,86 @@ if (Astro.request.method === 'POST') {
     <div class="login-body">
       {errorMessage && <div class="alert error">{errorMessage}</div>}
       
-      <div class="tabs">
-        <div class="tab active" onclick="showTab('credentials')">Email Login</div>
-        <div class="tab" onclick="showTab('master')">Master Key</div>
+      <div class="tabs" id="tabContainer">
+        <div class="tab active" id="tab-credentials">Email Login</div>
+        <div class="tab" id="tab-master">Master Key</div>
       </div>
       
       <!-- Email/Password Login -->
-      <div id="credentials-tab" cl
+      <div id="credentials-tab" class="tab-content active">
+        <form method="POST">
+          <input type="hidden" name="loginType" value="credentials" />
+          
+          <div class="form-group">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" id="email" name="email" class="form-input" placeholder="admin@example.com" />
+          </div>
+          
+          <div class="form-group">
+            <label for="password" class="form-label">Password</label>
+            <input type="password" id="password" name="password" class="form-input" placeholder="••••••••" />
+          </div>
+          
+          <button type="submit" class="submit-btn">Sign In</button>
+        </form>
+        
+        <a href="/admin/setup" class="setup-link">First time? Set up admin account →</a>
+      </div>
+      
+      <!-- Master Key Login -->
+      <div id="master-tab" class="tab-content">
+        {hasMasterKey ? (
+          <>
+            <div class="master-key-info">
+              ⚠️ Master key login bypasses normal authentication. Use only for emergency access or initial setup.
+            </div>
+            
+            <form method="POST">
+              <input type="hidden" name="loginType" value="master_key" />
+              
+              <div class="form-group">
+                <label for="masterKey" class="form-label">Master Key</label>
+                <input type="password" id="masterKey" name="masterKey" class="form-input" placeholder="Enter master key" autocomplete="off" />
+              </div>
+              
+              <button type="submit" class="submit-btn master">Access with Master Key</button>
+            </form>
+          </>
+        ) : (
+          <div class="no-master-key">
+            <p>Master key is not configured.</p>
+            <p style="margin-top: 0.5rem; font-size: 0.75rem;">
+              Add ADMIN_MASTER_KEY to your environment variables.
+            </p>
+          </div>
+        )}
+      </div>
+      
+      <a href="/" class="back-link">← Back to Site</a>
+    </div>
+  </div>
+  
+  <script is:inline>
+    (function() {
+      var tabCredentials = document.getElementById('tab-credentials');
+      var tabMaster = document.getElementById('tab-master');
+      var contentCredentials = document.getElementById('credentials-tab');
+      var contentMaster = document.getElementById('master-tab');
+      
+      tabCredentials.addEventListener('click', function() {
+        tabCredentials.classList.add('active');
+        tabMaster.classList.remove('active');
+        contentCredentials.classList.add('active');
+        contentMaster.classList.remove('active');
+      });
+      
+      tabMaster.addEventListener('click', function() {
+        tabMaster.classList.add('active');
+        tabCredentials.classList.remove('active');
+        contentMaster.classList.add('active');
+        contentCredentials.classList.remove('active');
+      });
+    })();
+  </script>
+</body>
+</html>
