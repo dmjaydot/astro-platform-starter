@@ -139,7 +139,6 @@ const view = Astro.url.searchParams.get('view') || 'pending';
   </div>
   
   {view === 'pending' ? (
-    <!-- Pending Reviews -->
     pendingPosts && pendingPosts.length > 0 ? (
       <div class="review-grid">
         {pendingPosts.map((post, index) => (
