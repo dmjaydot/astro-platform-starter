@@ -3,42 +3,55 @@
 export const prerender = false;
 
 import AdminLayout from "../../layouts/AdminLayout.astro";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../../lib/supabase";
 
-const supabase = createClient(
-  import.meta.env.PUBLIC_SUPABASE_URL,
-  import.meta.env.SUPABASE_SERVICE_KEY
-);
+// Auth from middleware
+const isMasterKeySession = Astro.locals.isMasterKeySession || false;
+const session = Astro.locals.session;
+
+if (!isMasterKeySession && !session) {
+  return Astro.redirect('/admin/login');
+}
 
 const { data: users, error } = await supabase
   .from("profiles")
-  .select("id, email, full_name, role, is_active")
+  .select("id, email, full_name, role, is_active, created_at")
   .order("created_at", { ascending: false });
 ---
 
 <AdminLayout title="Users">
-  <h1>Users</h1>
-
-  {error && <p class="error">{error.message}</p>}
-
-  <table class="admin-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Email</th>
-        <th>Role</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {users?.map(user => (
+  {error && <div class="alert error">{error.message}</div>}
+  
+  {users && users.length > 0 ? (
+    <table class="admin-table">
+      <thead>
         <tr>
-          <td>{user.full_name}</td>
-          <td>{user.email}</td>
-          <td>{user.role}</td>
-          <td>{user.is_active ? "Active" : "Disabled"}</td>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Joined</th>
         </tr>
-      ))}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {users.map(user => (
+          <tr>
+            <td>{user.full_name || '—'}</td>
+            <td>{user.email}</td>
+            <td><span class={`badge ${user.role || 'creator'}`}>{user.role || 'creator'}</span></td>
+            <td><span class={`badge ${user.is_active ? 'active' : 'disabled'}`}>{user.is_active ? 'Active' : 'Disabled'}</span></td>
+            <td>{new Date(user.created_at).toLocaleDateString()}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ) : (
+    <div class="panel">
+      <div class="empty-state">
+        <div class="empty-state-icon">👥</div>
+        <div class="empty-state-title">No users yet</div>
+        <p>Users will appear here once they sign up.</p>
+      </div>
+    </div>
+  )}
 </AdminLayout>
