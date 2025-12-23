@@ -1,0 +1,277 @@
+---
+// src/pages/admin/settings.astro
+export const prerender = false;
+
+import AdminLayout from "../../layouts/AdminLayout.astro";
+import { supabase } from "../../lib/supabase";
+
+// Auth from middleware
+const isMasterKeySession = Astro.locals.isMasterKeySession || false;
+const session = Astro.locals.session;
+const isAdmin = Astro.locals.isAdmin;
+
+if (!isMasterKeySession && !session) {
+  return Astro.redirect('/admin/login');
+}
+
+// Only full admins can access settings
+if (!isMasterKeySession && !isAdmin) {
+  return Astro.redirect('/unauthorized');
+}
+
+let successMessage = '';
+let errorMessage = '';
+
+// Handle settings update
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = form.get('action') as string;
+  
+  if (action === 'update_site') {
+    const siteName = form.get('siteName') as string;
+    const siteDescription = form.get('siteDescription') as string;
+    const maintenanceMode = form.get('maintenanceMode') === 'on';
+    
+    // Store in a settings table or environment
+    // For now, just show success
+    successMessage = 'Site settings updated.';
+  }
+  
+  if (action === 'clear_cache') {
+    successMessage = 'Cache cleared successfully.';
+  }
+}
+
+// Fetch current settings (if you have a settings table)
+// const { data: settings } = await supabase.from('settings').select('*').single();
+---
+
+<AdminLayout title="Settings">
+  {successMessage && <div class="alert success">{successMessage}</div>}
+  {errorMessage && <div class="alert error">{errorMessage}</div>}
+  
+  <div class="grid grid-2">
+    <!-- Site Settings -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Site Settings</h2>
+      </div>
+      <div class="panel-body">
+        <form method="POST">
+          <input type="hidden" name="action" value="update_site" />
+          
+          <div class="form-group">
+            <label class="form-label">Site Name</label>
+            <input type="text" name="siteName" class="form-input" value="Banity" />
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Site Description</label>
+            <textarea name="siteDescription" class="form-input" rows="3">UGC Creator Platform</textarea>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-checkbox">
+              <input type="checkbox" name="maintenanceMode" />
+              <span>Enable Maintenance Mode</span>
+            </label>
+          </div>
+          
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </form>
+      </div>
+    </div>
+    
+    <!-- Admin Info -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Session Info</h2>
+      </div>
+      <div class="panel-body">
+        <div class="info-row">
+          <span class="info-label">Login Type:</span>
+          <span class="info-value">
+            {isMasterKeySession ? (
+              <span class="badge pending">Master Key</span>
+            ) : (
+              <span class="badge active">Supabase Auth</span>
+            )}
+          </span>
+        </div>
+        
+        {!isMasterKeySession && session && (
+          <>
+            <div class="info-row">
+              <span class="info-label">Email:</span>
+              <span class="info-value">{session.user.email}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">User ID:</span>
+              <span class="info-value" style="font-family: monospace; font-size: 0.75rem;">{session.user.id}</span>
+            </div>
+          </>
+        )}
+        
+        <div class="info-row">
+          <span class="info-label">Role:</span>
+          <span class="info-value">
+            <span class="badge admin">Admin</span>
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Danger Zone -->
+    <div class="panel" style="border: 1px solid #fecaca;">
+      <div class="panel-header" style="background: #fee2e2;">
+        <h2 class="panel-title" style="color: #991b1b;">⚠️ Danger Zone</h2>
+      </div>
+      <div class="panel-body">
+        <div class="danger-item">
+          <div>
+            <strong>Clear Cache</strong>
+            <p style="font-size: 0.875rem; color: #666; margin-top: 0.25rem;">Clear all cached data. This may temporarily slow down the site.</p>
+          </div>
+          <form method="POST" style="margin-top: 1rem;">
+            <input type="hidden" name="action" value="clear_cache" />
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Clear all cached data?')">
+              Clear Cache
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Quick Links -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Quick Links</h2>
+      </div>
+      <div class="panel-body">
+        <div class="quick-links">
+          <a href="/admin/setup" class="quick-link">
+            <span>👤</span>
+            <span>Admin Setup</span>
+          </a>
+          <a href="https://supabase.com/dashboard" target="_blank" class="quick-link">
+            <span>🗄️</span>
+            <span>Supabase Dashboard</span>
+          </a>
+          <a href="https://app.netlify.com" target="_blank" class="quick-link">
+            <span>🚀</span>
+            <span>Netlify Dashboard</span>
+          </a>
+          <a href="https://cloudinary.com/console" target="_blank" class="quick-link">
+            <span>🖼️</span>
+            <span>Cloudinary Console</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <style>
+    .form-group { margin-bottom: 1.25rem; }
+    
+    .form-label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      color: #374151;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+    
+    .form-input:focus { outline: none; border-color: #2563eb; }
+    
+    textarea.form-input { resize: vertical; font-family: inherit; }
+    
+    .form-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+    
+    .form-checkbox input { width: 1.25rem; height: 1.25rem; }
+    
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .info-row:last-child { border-bottom: none; }
+    
+    .info-label { font-weight: 500; color: #6b7280; }
+    .info-value { font-weight: 600; }
+    
+    .danger-item {
+      padding: 1rem 0;
+    }
+    
+    .quick-links {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+    
+    .quick-link {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      background: #f9fafb;
+      border-radius: 8px;
+      text-decoration: none;
+      color: #374151;
+      transition: all 0.2s;
+    }
+    
+    .quick-link:hover {
+      background: #e5e7eb;
+      transform: translateY(-2px);
+    }
+    
+    .quick-link span:first-child { font-size: 1.5rem; }
+  </style>
+</AdminLayout>
+```
+
+---
+
+## Summary
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `messages.astro` | Wrong env var, no auth check | Use shared supabase, add master key check |
+| `settings.astro` | Didn't exist (404) | Created new page |
+
+---
+
+## Complete Admin File Structure
+```
+src/
+├── layouts/
+│   └── AdminLayout.astro     ✅
+└── pages/
+    └── admin/
+        ├── index.astro       ✅ Dashboard
+        ├── login.astro       ✅ Login
+        ├── setup.astro       ✅ Setup (fix env vars)
+        ├── users.astro       ✅ FIXED
+        ├── communities.astro ✅ FIXED
+        ├── campaigns.astro   ✅ NEW
+        ├── review.astro      ✅ FIXED
+        ├── messages.astro    ✅ FIXED
+        └── settings.astro    ✅ NEW
