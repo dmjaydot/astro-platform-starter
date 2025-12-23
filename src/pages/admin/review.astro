@@ -2,24 +2,21 @@
 // src/pages/admin/review.astro
 export const prerender = false;
 
+import AdminLayout from "../../layouts/AdminLayout.astro";
 import { supabase } from '../../lib/supabase';
 
-// --------------------------------------------------
-// Auth & role data (from middleware)
-// --------------------------------------------------
+// Auth from middleware - CHECK MASTER KEY SESSION TOO
+const isMasterKeySession = Astro.locals.isMasterKeySession || false;
 const session = Astro.locals.session;
-const profile = Astro.locals.profile;
 const isAdmin = Astro.locals.isAdmin;
 const isModerator = Astro.locals.isModerator;
 
-// Safety fallback (middleware should already enforce this)
-if (!session || (!isAdmin && !isModerator)) {
-  return Astro.redirect('/unauthorized');
+// Allow master key OR valid session with admin/mod access
+if (!isMasterKeySession && (!session || (!isAdmin && !isModerator))) {
+  return Astro.redirect('/admin/login');
 }
 
-// --------------------------------------------------
 // Handle review action
-// --------------------------------------------------
 let actionMessage = '';
 let actionError = '';
 
@@ -35,11 +32,14 @@ if (Astro.request.method === 'POST') {
     else if (action === 'reject') newStatus = 'rejected';
     else if (action === 'revision') newStatus = 'revision_requested';
 
+    // For master key sessions, use a placeholder reviewer ID
+    const reviewerId = session?.user?.id || 'master-key-admin';
+
     const { error } = await supabase
       .from('posts')
       .update({
         status: newStatus,
-        reviewed_by: session.user.id,
+        reviewed_by: reviewerId,
         reviewed_at: new Date().toISOString(),
         review_notes: notes || null,
       })
@@ -48,21 +48,12 @@ if (Astro.request.method === 'POST') {
     if (error) {
       actionError = `Failed to update: ${error.message}`;
     } else {
-      actionMessage =
-        `Post ${
-          action === 'approve'
-            ? 'approved'
-            : action === 'reject'
-            ? 'rejected'
-            : 'sent for revision'
-        }!`;
+      actionMessage = `Post ${action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'sent for revision'}!`;
     }
   }
 }
 
-// --------------------------------------------------
 // Fetch pending posts
-// --------------------------------------------------
 const { data: pendingPosts } = await supabase
   .from('posts')
   .select(`
@@ -73,9 +64,7 @@ const { data: pendingPosts } = await supabase
   .eq('status', 'pending')
   .order('created_at', { ascending: true });
 
-// --------------------------------------------------
 // Fetch recently reviewed
-// --------------------------------------------------
 const { data: recentlyReviewed } = await supabase
   .from('posts')
   .select(`
@@ -87,16 +76,126 @@ const { data: recentlyReviewed } = await supabase
   .order('reviewed_at', { ascending: false })
   .limit(10);
 ---
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Review Queue - Admin - Banity</title>
-  <!-- styles unchanged -->
-</head>
-<body>
-  <div class="admin-layout">
-    <aside class="sidebar">
-      <div class="sidebar-logo">🛡️ Admin</div>
-      <nav
+
+<AdminLayout title="Review Queue">
+  {actionMessage && <div class="alert success">{actionMessage}</div>}
+  {actionError && <div class="alert error">{actionError}</div>}
+  
+  <div class="panel">
+    <div class="panel-header">
+      <h2 class="panel-title">Pending Reviews ({pendingPosts?.length || 0})</h2>
+    </div>
+    
+    {pendingPosts && pendingPosts.length > 0 ? (
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Post</th>
+            <th>Creator</th>
+            <th>Campaign</th>
+            <th>Submitted</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pendingPosts.map(post => (
+            <tr>
+              <td>
+                <strong>{post.title || 'Untitled'}</strong>
+                {post.media_url && (
+                  <div style="margin-top: 0.25rem;">
+                    <a href={post.media_url} target="_blank" class="btn btn-sm btn-secondary">View Media</a>
+                  </div>
+                )}
+              </td>
+              <td>
+                <div>{post.profiles?.full_name || 'Unknown'}</div>
+                <div style="font-size: 0.75rem; color: #666;">{post.profiles?.email}</div>
+              </td>
+              <td>{post.campaigns?.title || '—'}</td>
+              <td>{new Date(post.created_at).toLocaleDateString()}</td>
+              <td>
+                <form method="POST" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                  <input type="hidden" name="postId" value={post.id} />
+                  <button type="submit" name="action" value="approve" class="btn btn-sm btn-success">✓ Approve</button>
+                  <button type="submit" name="action" value="reject" class="btn btn-sm btn-danger">✗ Reject</button>
+                  <button type="submit" name="action" value="revision" class="btn btn-sm btn-secondary">↻ Revision</button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : (
+      <div class="empty-state">
+        <div class="empty-state-icon">🎉</div>
+        <div class="empty-state-title">All caught up!</div>
+        <p>No posts pending review.</p>
+      </div>
+    )}
+  </div>
+  
+  <div class="panel" style="margin-top: 2rem;">
+    <div class="panel-header">
+      <h2 class="panel-title">Recently Reviewed</h2>
+    </div>
+    
+    {recentlyReviewed && recentlyReviewed.length > 0 ? (
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Post</th>
+            <th>Creator</th>
+            <th>Campaign</th>
+            <th>Status</th>
+            <th>Reviewed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {recentlyReviewed.map(post => (
+            <tr>
+              <td>{post.title || 'Untitled'}</td>
+              <td>{post.profiles?.full_name || 'Unknown'}</td>
+              <td>{post.campaigns?.title || '—'}</td>
+              <td><span class={`badge ${post.status}`}>{post.status}</span></td>
+              <td>{post.reviewed_at ? new Date(post.reviewed_at).toLocaleDateString() : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : (
+      <div class="empty-state">
+        <p>No recently reviewed posts.</p>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+```
+
+---
+
+## Summary of Fixes
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `AdminLayout.astro` | Missing/no CSS | Complete layout with all admin styles |
+| `users.astro` | Wrong env var, no master key check | Use shared supabase, check `isMasterKeySession` |
+| `communities.astro` | Same as above | Same fixes |
+| `campaigns.astro` | Didn't exist (404) | Created new page |
+| `review.astro` | `!session` fails for master key | Check `isMasterKeySession \|\| session` |
+
+---
+
+## File Structure
+```
+src/
+├── layouts/
+│   └── AdminLayout.astro    ← UPDATED (full CSS)
+└── pages/
+    └── admin/
+        ├── index.astro      ← Dashboard (already working)
+        ├── login.astro      ← Login (already fixed)
+        ├── users.astro      ← FIXED
+        ├── communities.astro ← FIXED
+        ├── campaigns.astro  ← NEW
+        └── review.astro     ← FIXED
