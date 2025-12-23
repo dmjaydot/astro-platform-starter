@@ -1,13 +1,16 @@
 ---
 import { handleAdminLogin } from '../../lib/adminAuth.js';
-
 export const prerender = false;
 
 let errorMessage = '';
 let redirectUrl = '';
 
 if (Astro.request.method === 'POST') {
-  const result = await handleAdminLogin({ request: Astro.request, cookies: Astro.cookies, masterKey: import.meta.env.ADMIN_MASTER_KEY });
+  const result = await handleAdminLogin({ 
+    request: Astro.request, 
+    cookies: Astro.cookies, 
+    masterKey: import.meta.env.ADMIN_MASTER_KEY 
+  });
   errorMessage = result.error || '';
   redirectUrl = result.redirect || '';
 }
@@ -18,28 +21,93 @@ if (redirectUrl) {
 
 const hasMasterKey = !!import.meta.env.ADMIN_MASTER_KEY;
 ---
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Admin Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login - Banity</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .login-container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      width: 100%;
+      max-width: 420px;
+      overflow: hidden;
+    }
+    .login-header {
+      background: #1a1a2e;
+      color: white;
+      padding: 2rem;
+      text-align: center;
+    }
+    .login-logo { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .login-subtitle { font-size: 0.875rem; opacity: 0.8; }
+    .login-body { padding: 2rem; }
+    .form-group { margin-bottom: 1.25rem; }
+    label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+    input { width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #ccc; }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      border: none;
+      background: #2563eb;
+      color: white;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #1e4bb8; }
+    .error { color: red; margin-bottom: 1rem; text-align: center; }
+  </style>
 </head>
 <body>
-  {errorMessage && <p style="color:red;">{errorMessage}</p>}
+  <div class="login-container">
+    <div class="login-header">
+      <div class="login-logo">Banity Admin</div>
+      <div class="login-subtitle">Sign in to your account</div>
+    </div>
 
-  {hasMasterKey && (
-    <form method="POST">
-      <input type="hidden" name="loginType" value="master_key" />
-      <label>Master Key: <input type="password" name="masterKey" required /></label>
-      <button type="submit">Sign In</button>
-    </form>
-  )}
+    <div class="login-body">
+      {errorMessage && <div class="error">{errorMessage}</div>}
 
-  <form method="POST">
-    <input type="hidden" name="loginType" value="supabase" />
-    <label>Email: <input type="email" name="email" required /></label>
-    <label>Password: <input type="password" name="password" required /></label>
-    <button type="submit">Sign In</button>
-  </form>
+      {hasMasterKey && (
+        <form method="POST">
+          <input type="hidden" name="loginType" value="master_key" />
+          <div class="form-group">
+            <label>Master Key:</label>
+            <input type="password" name="masterKey" required />
+          </div>
+          <button type="submit">Sign In</button>
+        </form>
+      )}
+
+      <form method="POST">
+        <input type="hidden" name="loginType" value="supabase" />
+        <div class="form-group">
+          <label>Email:</label>
+          <input type="email" name="email" required />
+        </div>
+        <div class="form-group">
+          <label>Password:</label>
+          <input type="password" name="password" required />
+        </div>
+        <button type="submit">Sign In</button>
+      </form>
+    </div>
+  </div>
 </body>
 </html>
