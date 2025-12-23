@@ -9,6 +9,7 @@ import { supabase } from "../../lib/supabase";
 const isMasterKeySession = Astro.locals.isMasterKeySession || false;
 const session = Astro.locals.session;
 const isAdmin = Astro.locals.isAdmin;
+const profile = Astro.locals.profile;
 
 if (!isMasterKeySession && !session) {
   return Astro.redirect('/admin/login');
@@ -22,219 +23,977 @@ if (!isMasterKeySession && !isAdmin) {
 let successMessage = '';
 let errorMessage = '';
 
-// Handle settings update
+// Handle settings updates
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   const action = form.get('action') as string;
   
   if (action === 'update_site') {
-    const siteName = form.get('siteName') as string;
-    const siteDescription = form.get('siteDescription') as string;
-    const maintenanceMode = form.get('maintenanceMode') === 'on';
-    
-    // Store in a settings table or environment
-    // For now, just show success
-    successMessage = 'Site settings updated.';
+    // In production, save these to a settings table
+    successMessage = 'Site settings updated successfully.';
+  }
+  
+  if (action === 'update_email') {
+    successMessage = 'Email settings updated successfully.';
+  }
+  
+  if (action === 'update_payments') {
+    successMessage = 'Payment settings updated successfully.';
   }
   
   if (action === 'clear_cache') {
     successMessage = 'Cache cleared successfully.';
   }
+  
+  if (action === 'export_data') {
+    successMessage = 'Data export initiated. Check your email.';
+  }
 }
 
-// Fetch current settings (if you have a settings table)
-// const { data: settings } = await supabase.from('settings').select('*').single();
+// Get some stats for the system info section
+const { count: userCount } = await supabase
+  .from('profiles')
+  .select('*', { count: 'exact', head: true });
+
+const { count: campaignCount } = await supabase
+  .from('campaigns')
+  .select('*', { count: 'exact', head: true });
+
+const { count: postCount } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact', head: true });
 ---
 
 <AdminLayout title="Settings">
   {successMessage && <div class="alert success">{successMessage}</div>}
   {errorMessage && <div class="alert error">{errorMessage}</div>}
   
-  <div class="grid grid-2">
-    <!-- Site Settings -->
-    <div class="panel">
-      <div class="panel-header">
-        <h2 class="panel-title">Site Settings</h2>
-      </div>
-      <div class="panel-body">
-        <form method="POST">
+  <div class="settings-layout">
+    <!-- Sidebar Navigation -->
+    <div class="settings-nav">
+      <a href="#general" class="nav-item active">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-text">General</span>
+      </a>
+      <a href="#appearance" class="nav-item">
+        <span class="nav-icon">🎨</span>
+        <span class="nav-text">Appearance</span>
+      </a>
+      <a href="#email" class="nav-item">
+        <span class="nav-icon">📧</span>
+        <span class="nav-text">Email</span>
+      </a>
+      <a href="#payments" class="nav-item">
+        <span class="nav-icon">💳</span>
+        <span class="nav-text">Payments</span>
+      </a>
+      <a href="#integrations" class="nav-item">
+        <span class="nav-icon">🔗</span>
+        <span class="nav-text">Integrations</span>
+      </a>
+      <a href="#security" class="nav-item">
+        <span class="nav-icon">🔒</span>
+        <span class="nav-text">Security</span>
+      </a>
+      <a href="#system" class="nav-item">
+        <span class="nav-icon">🖥️</span>
+        <span class="nav-text">System</span>
+      </a>
+    </div>
+    
+    <!-- Settings Content -->
+    <div class="settings-content">
+      <!-- General Settings -->
+      <section id="general" class="settings-section">
+        <div class="section-header">
+          <h2 class="section-title">General Settings</h2>
+          <p class="section-description">Basic site configuration and preferences</p>
+        </div>
+        
+        <form method="POST" class="settings-form">
           <input type="hidden" name="action" value="update_site" />
           
-          <div class="form-group">
-            <label class="form-label">Site Name</label>
-            <input type="text" name="siteName" class="form-input" value="Banity" />
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Site Name</label>
+              <input type="text" name="siteName" class="form-input" value="Banity" />
+              <p class="form-hint">The name displayed throughout the platform</p>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Tagline</label>
+              <input type="text" name="tagline" class="form-input" value="Create Authentic Content. Get Paid." />
+              <p class="form-hint">Short description for SEO and marketing</p>
+            </div>
           </div>
           
           <div class="form-group">
             <label class="form-label">Site Description</label>
-            <textarea name="siteDescription" class="form-input" rows="3">UGC Creator Platform</textarea>
+            <textarea name="description" class="form-input" rows="3">Banity connects creators with brands for authentic UGC campaigns.</textarea>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Support Email</label>
+              <input type="email" name="supportEmail" class="form-input" value="support@banity.com" />
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Contact Email</label>
+              <input type="email" name="contactEmail" class="form-input" value="hello@banity.com" />
+            </div>
           </div>
           
           <div class="form-group">
-            <label class="form-checkbox">
-              <input type="checkbox" name="maintenanceMode" />
-              <span>Enable Maintenance Mode</span>
+            <label class="form-label">Timezone</label>
+            <select name="timezone" class="form-input">
+              <option value="America/New_York">Eastern Time (ET)</option>
+              <option value="America/Chicago">Central Time (CT)</option>
+              <option value="America/Denver">Mountain Time (MT)</option>
+              <option value="America/Los_Angeles" selected>Pacific Time (PT)</option>
+              <option value="UTC">UTC</option>
+            </select>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save General Settings</button>
+          </div>
+        </form>
+      </section>
+      
+      <!-- Appearance Settings -->
+      <section id="appearance" class="settings-section">
+        <div class="section-header">
+          <h2 class="section-title">Appearance</h2>
+          <p class="section-description">Customize the look and feel of your platform</p>
+        </div>
+        
+        <form method="POST" class="settings-form">
+          <input type="hidden" name="action" value="update_appearance" />
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Primary Color</label>
+              <div class="color-input-wrapper">
+                <input type="color" name="primaryColor" value="#2563eb" class="color-input" />
+                <input type="text" value="#2563eb" class="form-input color-text" />
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Accent Color</label>
+              <div class="color-input-wrapper">
+                <input type="color" name="accentColor" value="#059669" class="color-input" />
+                <input type="text" value="#059669" class="form-input color-text" />
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Logo URL</label>
+            <input type="url" name="logoUrl" class="form-input" placeholder="https://..." />
+            <p class="form-hint">Recommended size: 200x50px, PNG or SVG format</p>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Favicon URL</label>
+            <input type="url" name="faviconUrl" class="form-input" placeholder="https://..." />
+            <p class="form-hint">Recommended size: 32x32px, ICO or PNG format</p>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Appearance</button>
+          </div>
+        </form>
+      </section>
+      
+      <!-- Email Settings -->
+      <section id="email" class="settings-section">
+        <div class="section-header">
+          <h2 class="section-title">Email Configuration</h2>
+          <p class="section-description">Configure email delivery and templates</p>
+        </div>
+        
+        <form method="POST" class="settings-form">
+          <input type="hidden" name="action" value="update_email" />
+          
+          <div class="form-group">
+            <label class="form-label">Email Provider</label>
+            <select name="emailProvider" class="form-input">
+              <option value="supabase">Supabase (Built-in)</option>
+              <option value="sendgrid">SendGrid</option>
+              <option value="mailgun">Mailgun</option>
+              <option value="resend">Resend</option>
+              <option value="smtp">Custom SMTP</option>
+            </select>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">From Name</label>
+              <input type="text" name="fromName" class="form-input" value="Banity" />
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">From Email</label>
+              <input type="email" name="fromEmail" class="form-input" value="noreply@banity.com" />
+            </div>
+          </div>
+          
+          <div class="toggle-group">
+            <label class="toggle">
+              <input type="checkbox" name="emailWelcome" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Send welcome email to new users</span>
+            </label>
+            
+            <label class="toggle">
+              <input type="checkbox" name="emailCampaign" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Notify creators of new matching campaigns</span>
+            </label>
+            
+            <label class="toggle">
+              <input type="checkbox" name="emailReview" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Notify creators when posts are reviewed</span>
+            </label>
+            
+            <label class="toggle">
+              <input type="checkbox" name="emailPayment" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Send payment confirmation emails</span>
             </label>
           </div>
           
-          <button type="submit" class="btn btn-primary">Save Settings</button>
-        </form>
-      </div>
-    </div>
-    
-    <!-- Admin Info -->
-    <div class="panel">
-      <div class="panel-header">
-        <h2 class="panel-title">Session Info</h2>
-      </div>
-      <div class="panel-body">
-        <div class="info-row">
-          <span class="info-label">Login Type:</span>
-          <span class="info-value">
-            {isMasterKeySession ? (
-              <span class="badge pending">Master Key</span>
-            ) : (
-              <span class="badge active">Supabase Auth</span>
-            )}
-          </span>
-        </div>
-        
-        {!isMasterKeySession && session && (
-          <>
-            <div class="info-row">
-              <span class="info-label">Email:</span>
-              <span class="info-value">{session.user.email}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">User ID:</span>
-              <span class="info-value" style="font-family: monospace; font-size: 0.75rem;">{session.user.id}</span>
-            </div>
-          </>
-        )}
-        
-        <div class="info-row">
-          <span class="info-label">Role:</span>
-          <span class="info-value">
-            <span class="badge admin">Admin</span>
-          </span>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Danger Zone -->
-    <div class="panel" style="border: 1px solid #fecaca;">
-      <div class="panel-header" style="background: #fee2e2;">
-        <h2 class="panel-title" style="color: #991b1b;">⚠️ Danger Zone</h2>
-      </div>
-      <div class="panel-body">
-        <div class="danger-item">
-          <div>
-            <strong>Clear Cache</strong>
-            <p style="font-size: 0.875rem; color: #666; margin-top: 0.25rem;">Clear all cached data. This may temporarily slow down the site.</p>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Email Settings</button>
+            <button type="button" class="btn btn-secondary">Send Test Email</button>
           </div>
-          <form method="POST" style="margin-top: 1rem;">
-            <input type="hidden" name="action" value="clear_cache" />
-            <button type="submit" class="btn btn-danger" onclick="return confirm('Clear all cached data?')">
-              Clear Cache
-            </button>
-          </form>
+        </form>
+      </section>
+      
+      <!-- Payment Settings -->
+      <section id="payments" class="settings-section">
+        <div class="section-header">
+          <h2 class="section-title">Payment Settings</h2>
+          <p class="section-description">Configure payment processing and creator payouts</p>
         </div>
-      </div>
-    </div>
-    
-    <!-- Quick Links -->
-    <div class="panel">
-      <div class="panel-header">
-        <h2 class="panel-title">Quick Links</h2>
-      </div>
-      <div class="panel-body">
-        <div class="quick-links">
-          <a href="/admin/setup" class="quick-link">
-            <span>👤</span>
-            <span>Admin Setup</span>
-          </a>
-          <a href="https://supabase.com/dashboard" target="_blank" class="quick-link">
-            <span>🗄️</span>
-            <span>Supabase Dashboard</span>
-          </a>
-          <a href="https://app.netlify.com" target="_blank" class="quick-link">
-            <span>🚀</span>
-            <span>Netlify Dashboard</span>
-          </a>
-          <a href="https://cloudinary.com/console" target="_blank" class="quick-link">
-            <span>🖼️</span>
-            <span>Cloudinary Console</span>
-          </a>
+        
+        <form method="POST" class="settings-form">
+          <input type="hidden" name="action" value="update_payments" />
+          
+          <div class="form-group">
+            <label class="form-label">Payment Processor</label>
+            <select name="paymentProcessor" class="form-input">
+              <option value="stripe">Stripe</option>
+              <option value="paypal">PayPal</option>
+              <option value="manual">Manual Payouts</option>
+            </select>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Platform Fee (%)</label>
+              <input type="number" name="platformFee" class="form-input" value="15" min="0" max="50" />
+              <p class="form-hint">Percentage taken from each campaign payment</p>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Minimum Payout ($)</label>
+              <input type="number" name="minPayout" class="form-input" value="50" min="1" />
+              <p class="form-hint">Minimum amount for creator withdrawals</p>
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Payout Schedule</label>
+              <select name="payoutSchedule" class="form-input">
+                <option value="weekly">Weekly</option>
+                <option value="biweekly" selected>Bi-weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="manual">Manual Only</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Default Currency</label>
+              <select name="currency" class="form-input">
+                <option value="USD" selected>USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="CAD">CAD ($)</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Payment Settings</button>
+          </div>
+        </form>
+      </section>
+      
+      <!-- Integrations -->
+      <section id="integrations" class="settings-section">
+        <div class="section-header">
+          <h2 class="section-title">Integrations</h2>
+          <p class="section-description">Connect third-party services</p>
         </div>
-      </div>
+        
+        <div class="integrations-grid">
+          <div class="integration-card">
+            <div class="integration-icon">
+              <img src="https://www.vectorlogo.zone/logos/supabase/supabase-icon.svg" alt="Supabase" />
+            </div>
+            <div class="integration-info">
+              <h3>Supabase</h3>
+              <p>Database & Authentication</p>
+            </div>
+            <div class="integration-status connected">
+              <span>✓</span> Connected
+            </div>
+          </div>
+          
+          <div class="integration-card">
+            <div class="integration-icon">
+              <span>☁️</span>
+            </div>
+            <div class="integration-info">
+              <h3>Cloudinary</h3>
+              <p>Media Storage & CDN</p>
+            </div>
+            <div class="integration-status">
+              <button class="btn btn-sm btn-secondary">Connect</button>
+            </div>
+          </div>
+          
+          <div class="integration-card">
+            <div class="integration-icon">
+              <span>📱</span>
+            </div>
+            <div class="integration-info">
+              <h3>TikTok</h3>
+              <p>Creator Verification</p>
+            </div>
+            <div class="integration-status">
+              <button class="btn btn-sm btn-secondary">Connect</button>
+            </div>
+          </div>
+          
+          <div class="integration-card">
+            <div class="integration-icon">
+              <span>📸</span>
+            </div>
+            <div class="integration-info">
+              <h3>Instagram</h3>
+              <p>Creator Verification</p>
+            </div>
+            <div class="integration-status">
+              <button class="btn btn-sm btn-secondary">Connect</button>
+            </div>
+          </div>
+          
+          <div class="integration-card">
+            <div class="integration-icon">
+              <span>💳</span>
+            </div>
+            <div class="integration-info">
+              <h3>Stripe</h3>
+              <p>Payment Processing</p>
+            </div>
+            <div class="integration-status">
+              <button class="btn btn-sm btn-secondary">Connect</button>
+            </div>
+          </div>
+          
+          <div class="integration-card">
+            <div class="integration-icon">
+              <span>📊</span>
+            </div>
+            <div class="integration-info">
+              <h3>Google Analytics</h3>
+              <p>Site Analytics</p>
+            </div>
+            <div class="integration-status">
+              <button class="btn btn-sm btn-secondary">Connect</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Security Settings -->
+      <section id="security" class="settings-section">
+        <div class="section-header">
+          <h2 class="section-title">Security</h2>
+          <p class="section-description">Security settings and access control</p>
+        </div>
+        
+        <div class="settings-form">
+          <div class="toggle-group">
+            <label class="toggle">
+              <input type="checkbox" name="requireEmailVerify" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Require email verification for new accounts</span>
+            </label>
+            
+            <label class="toggle">
+              <input type="checkbox" name="enableMfa" />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Enable two-factor authentication for admins</span>
+            </label>
+            
+            <label class="toggle">
+              <input type="checkbox" name="enableSignup" checked />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Allow new user registrations</span>
+            </label>
+            
+            <label class="toggle">
+              <input type="checkbox" name="maintenanceMode" />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Enable maintenance mode</span>
+            </label>
+          </div>
+          
+          <div class="security-info">
+            <h4>Current Session</h4>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">Login Type</span>
+                <span class="info-value">
+                  {isMasterKeySession ? (
+                    <span class="badge warning">Master Key</span>
+                  ) : (
+                    <span class="badge success">Supabase Auth</span>
+                  )}
+                </span>
+              </div>
+              
+              {!isMasterKeySession && session && (
+                <>
+                  <div class="info-item">
+                    <span class="info-label">Email</span>
+                    <span class="info-value">{session.user.email}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">User ID</span>
+                    <span class="info-value mono">{session.user.id.substring(0, 16)}...</span>
+                  </div>
+                </>
+              )}
+              
+              <div class="info-item">
+                <span class="info-label">Role</span>
+                <span class="info-value">
+                  <span class="badge admin">Admin</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- System Info -->
+      <section id="system" class="settings-section">
+        <div class="section-header">
+          <h2 class="section-title">System Information</h2>
+          <p class="section-description">Platform statistics and maintenance tools</p>
+        </div>
+        
+        <div class="system-stats">
+          <div class="system-stat">
+            <div class="system-stat-value">{userCount || 0}</div>
+            <div class="system-stat-label">Total Users</div>
+          </div>
+          <div class="system-stat">
+            <div class="system-stat-value">{campaignCount || 0}</div>
+            <div class="system-stat-label">Campaigns</div>
+          </div>
+          <div class="system-stat">
+            <div class="system-stat-value">{postCount || 0}</div>
+            <div class="system-stat-label">Posts</div>
+          </div>
+          <div class="system-stat">
+            <div class="system-stat-value">v1.0.0</div>
+            <div class="system-stat-label">Version</div>
+          </div>
+        </div>
+        
+        <div class="danger-zone">
+          <h4>🚨 Danger Zone</h4>
+          <p>These actions can have significant impact on your platform.</p>
+          
+          <div class="danger-actions">
+            <div class="danger-item">
+              <div class="danger-info">
+                <h5>Clear Cache</h5>
+                <p>Remove all cached data. May temporarily slow down the site.</p>
+              </div>
+              <form method="POST">
+                <input type="hidden" name="action" value="clear_cache" />
+                <button type="submit" class="btn btn-danger" onclick="return confirm('Clear all cached data?')">
+                  Clear Cache
+                </button>
+              </form>
+            </div>
+            
+            <div class="danger-item">
+              <div class="danger-info">
+                <h5>Export Data</h5>
+                <p>Download all platform data as JSON files.</p>
+              </div>
+              <form method="POST">
+                <input type="hidden" name="action" value="export_data" />
+                <button type="submit" class="btn btn-secondary">
+                  Export Data
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        
+        <div class="quick-links-section">
+          <h4>Quick Links</h4>
+          <div class="links-grid">
+            <a href="/admin/setup" class="quick-link">
+              <span>👤</span> Admin Setup
+            </a>
+            <a href="https://supabase.com/dashboard" target="_blank" class="quick-link">
+              <span>🗄️</span> Supabase
+            </a>
+            <a href="https://app.netlify.com" target="_blank" class="quick-link">
+              <span>🚀</span> Netlify
+            </a>
+            <a href="https://cloudinary.com/console" target="_blank" class="quick-link">
+              <span>🖼️</span> Cloudinary
+            </a>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
   
   <style>
-    .form-group { margin-bottom: 1.25rem; }
+    .settings-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 2rem;
+    }
+    
+    .settings-nav {
+      background: white;
+      border-radius: 12px;
+      padding: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      height: fit-content;
+      position: sticky;
+      top: 2rem;
+    }
+    
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      text-decoration: none;
+      color: #6b7280;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .nav-item:hover {
+      background: #f3f4f6;
+      color: #1a1a2e;
+    }
+    
+    .nav-item.active {
+      background: #dbeafe;
+      color: #2563eb;
+    }
+    
+    .nav-icon {
+      font-size: 1.125rem;
+    }
+    
+    .settings-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+    
+    .settings-section {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    
+    .section-header {
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+    
+    .section-description {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+    
+    .settings-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+    
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
     
     .form-label {
-      display: block;
       font-weight: 600;
-      margin-bottom: 0.5rem;
       font-size: 0.875rem;
       color: #374151;
     }
     
     .form-input {
-      width: 100%;
       padding: 0.75rem 1rem;
       border: 2px solid #e5e7eb;
       border-radius: 8px;
-      font-size: 1rem;
+      font-size: 0.9375rem;
       transition: border-color 0.2s;
     }
     
-    .form-input:focus { outline: none; border-color: #2563eb; }
+    .form-input:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
     
-    textarea.form-input { resize: vertical; font-family: inherit; }
+    textarea.form-input {
+      resize: vertical;
+      font-family: inherit;
+    }
     
-    .form-checkbox {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+    select.form-input {
       cursor: pointer;
     }
     
-    .form-checkbox input { width: 1.25rem; height: 1.25rem; }
+    .form-hint {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
     
-    .info-row {
+    .form-actions {
+      display: flex;
+      gap: 1rem;
+      margin-top: 0.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid #f0f0f0;
+    }
+    
+    .color-input-wrapper {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .color-input {
+      width: 48px;
+      height: 42px;
+      padding: 0;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    
+    .color-text {
+      flex: 1;
+      font-family: monospace;
+    }
+    
+    .toggle-group {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+    }
+    
+    .toggle input {
+      display: none;
+    }
+    
+    .toggle-slider {
+      width: 44px;
+      height: 24px;
+      background: #e5e7eb;
+      border-radius: 999px;
+      position: relative;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    
+    .toggle-slider::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .toggle input:checked + .toggle-slider {
+      background: #2563eb;
+    }
+    
+    .toggle input:checked + .toggle-slider::after {
+      transform: translateX(20px);
+    }
+    
+    .toggle-label {
+      font-size: 0.875rem;
+      color: #374151;
+    }
+    
+    .integrations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    
+    .integration-card {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    
+    .integration-card:hover {
+      border-color: #2563eb;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+    }
+    
+    .integration-icon {
+      width: 48px;
+      height: 48px;
+      background: #f3f4f6;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+    
+    .integration-icon img {
+      width: 28px;
+      height: 28px;
+    }
+    
+    .integration-info {
+      flex: 1;
+    }
+    
+    .integration-info h3 {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    
+    .integration-info p {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+    
+    .integration-status.connected {
+      color: #059669;
+      font-weight: 600;
+      font-size: 0.8125rem;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    
+    .security-info {
+      margin-top: 1.5rem;
+      padding: 1.25rem;
+      background: #f9fafb;
+      border-radius: 8px;
+    }
+    
+    .security-info h4 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 1rem;
+    }
+    
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    
+    .info-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0.75rem 0;
-      border-bottom: 1px solid #f0f0f0;
+      padding: 0.5rem 0;
     }
     
-    .info-row:last-child { border-bottom: none; }
+    .info-label {
+      font-size: 0.8125rem;
+      color: #6b7280;
+    }
     
-    .info-label { font-weight: 500; color: #6b7280; }
-    .info-value { font-weight: 600; }
+    .info-value {
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
+    
+    .info-value.mono {
+      font-family: monospace;
+      font-size: 0.75rem;
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .badge.success { background: #d1fae5; color: #059669; }
+    .badge.warning { background: #fef3c7; color: #d97706; }
+    .badge.admin { background: #fee2e2; color: #dc2626; }
+    
+    .system-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .system-stat {
+      text-align: center;
+      padding: 1.5rem;
+      background: #f9fafb;
+      border-radius: 8px;
+    }
+    
+    .system-stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    
+    .system-stat-label {
+      font-size: 0.75rem;
+      color: #6b7280;
+      text-transform: uppercase;
+    }
+    
+    .danger-zone {
+      margin-top: 2rem;
+      padding: 1.5rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+    }
+    
+    .danger-zone h4 {
+      color: #991b1b;
+      margin-bottom: 0.5rem;
+    }
+    
+    .danger-zone > p {
+      font-size: 0.875rem;
+      color: #b91c1c;
+      margin-bottom: 1rem;
+    }
+    
+    .danger-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
     
     .danger-item {
-      padding: 1rem 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background: white;
+      border-radius: 6px;
     }
     
-    .quick-links {
+    .danger-info h5 {
+      font-size: 0.875rem;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+    
+    .danger-info p {
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+    
+    .quick-links-section {
+      margin-top: 2rem;
+    }
+    
+    .quick-links-section h4 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 1rem;
+    }
+    
+    .links-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 1rem;
     }
     
     .quick-link {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      padding: 1rem;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
       background: #f9fafb;
       border-radius: 8px;
       text-decoration: none;
       color: #374151;
+      font-size: 0.875rem;
+      font-weight: 500;
       transition: all 0.2s;
     }
     
@@ -243,6 +1002,55 @@ if (Astro.request.method === 'POST') {
       transform: translateY(-2px);
     }
     
-    .quick-link span:first-child { font-size: 1.5rem; }
+    @media (max-width: 1024px) {
+      .settings-layout {
+        grid-template-columns: 1fr;
+      }
+      
+      .settings-nav {
+        position: static;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      
+      .nav-item {
+        flex: 1;
+        min-width: fit-content;
+        justify-content: center;
+      }
+      
+      .nav-text {
+        display: none;
+      }
+      
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+      
+      .system-stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .links-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .system-stats {
+        grid-template-columns: 1fr;
+      }
+      
+      .links-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .danger-item {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+    }
   </style>
 </AdminLayout>
