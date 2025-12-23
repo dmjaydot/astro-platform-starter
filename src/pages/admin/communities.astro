@@ -3,40 +3,53 @@
 export const prerender = false;
 
 import AdminLayout from "../../layouts/AdminLayout.astro";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../../lib/supabase";
 
-const supabase = createClient(
-  import.meta.env.PUBLIC_SUPABASE_URL,
-  import.meta.env.SUPABASE_SERVICE_KEY
-);
+// Auth from middleware
+const isMasterKeySession = Astro.locals.isMasterKeySession || false;
+const session = Astro.locals.session;
 
-const { data: communities } = await supabase
+if (!isMasterKeySession && !session) {
+  return Astro.redirect('/admin/login');
+}
+
+const { data: communities, error } = await supabase
   .from("communities")
   .select("id, name, slug, is_active, created_at")
   .order("created_at", { ascending: false });
 ---
 
 <AdminLayout title="Communities">
-  <h1>Communities</h1>
-
-  <table class="admin-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Slug</th>
-        <th>Status</th>
-        <th>Created</th>
-      </tr>
-    </thead>
-    <tbody>
-      {communities?.map(c => (
+  {error && <div class="alert error">{error.message}</div>}
+  
+  {communities && communities.length > 0 ? (
+    <table class="admin-table">
+      <thead>
         <tr>
-          <td>{c.name}</td>
-          <td>{c.slug}</td>
-          <td>{c.is_active ? "Active" : "Archived"}</td>
-          <td>{new Date(c.created_at).toLocaleDateString()}</td>
+          <th>Name</th>
+          <th>Slug</th>
+          <th>Status</th>
+          <th>Created</th>
         </tr>
-      ))}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {communities.map(c => (
+          <tr>
+            <td>{c.name}</td>
+            <td><code>{c.slug}</code></td>
+            <td><span class={`badge ${c.is_active ? 'active' : 'disabled'}`}>{c.is_active ? 'Active' : 'Archived'}</span></td>
+            <td>{new Date(c.created_at).toLocaleDateString()}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ) : (
+    <div class="panel">
+      <div class="empty-state">
+        <div class="empty-state-icon">💬</div>
+        <div class="empty-state-title">No communities yet</div>
+        <p>Communities will appear here once created.</p>
+      </div>
+    </div>
+  )}
 </AdminLayout>
