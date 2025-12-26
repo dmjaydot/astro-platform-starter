@@ -64,23 +64,27 @@ if (Astro.request.method === 'POST') {
 }
 
 // Fetch messages
-const { data: messages, error } = await supabase
+const { data: messageList, error: fetchError } = await supabase
   .from("messages")
   .select("id, email, name, subject, body, created_at, is_read")
   .order("created_at", { ascending: false });
 
+// Handle table not existing
+const tableExists = !fetchError || fetchError.code !== '42P01';
+const allMessages = messageList || [];
+
 // Calculate stats
-const totalMessages = messages?.length || 0;
-const unreadMessages = messages?.filter(m => !m.is_read).length || 0;
-const todayMessages = messages?.filter(m => {
+const totalMessages = allMessages.length;
+const unreadMessages = allMessages.filter(m => !m.is_read).length;
+const todayMessages = allMessages.filter(m => {
   const msgDate = new Date(m.created_at);
   const today = new Date();
   return msgDate.toDateString() === today.toDateString();
-}).length || 0;
+}).length;
 
 // Get filter from URL
 const filter = Astro.url.searchParams.get('filter') || 'all';
-const filteredMessages = messages?.filter(message => {
+const filteredMessages = allMessages.filter(message => {
   if (filter === 'all') return true;
   if (filter === 'unread') return !message.is_read;
   if (filter === 'read') return message.is_read;
@@ -89,7 +93,7 @@ const filteredMessages = messages?.filter(message => {
 
 // Get selected message
 const selectedId = Astro.url.searchParams.get('id');
-const selectedMessage = selectedId ? messages?.find(m => m.id === selectedId) : null;
+const selectedMessage = selectedId ? allMessages.find(m => m.id === selectedId) : null;
 
 // If viewing a message, mark it as read
 if (selectedMessage && !selectedMessage.is_read) {
@@ -99,182 +103,186 @@ if (selectedMessage && !selectedMessage.is_read) {
     .eq('id', selectedMessage.id);
   selectedMessage.is_read = true;
 }
-
-const { data: messages, error } = await supabase
-  .from("messages")
-  .select("*")
-  .order("created_at", { ascending: false });
-
-// If table doesn't exist, show empty state
-if (error?.code === '42P01') {
-  // Table doesn't exist - show setup message
-}
 ---
 
 <AdminLayout title="Messages">
   {actionMessage && <div class="alert success">{actionMessage}</div>}
   {actionError && <div class="alert error">{actionError}</div>}
-  {error && <div class="alert error">{error.message}</div>}
   
-  <!-- Stats Cards -->
-  <div class="stats-grid">
-    <div class="stat-card">
-      <div class="stat-icon">📬</div>
-      <div class="stat-content">
-        <div class="stat-value">{totalMessages}</div>
-        <div class="stat-label">Total Messages</div>
+  {!tableExists ? (
+    <div class="panel">
+      <div class="empty-state">
+        <div class="empty-state-icon">⚠️</div>
+        <div class="empty-state-title">Messages Table Not Found</div>
+        <p>The messages table doesn't exist in your database yet.</p>
+        <p style="margin-top: 1rem; font-size: 0.875rem; color: #6b7280;">
+          Run the SQL migration script in Supabase to create it.
+        </p>
       </div>
     </div>
-    <div class="stat-card urgent">
-      <div class="stat-icon">🔔</div>
-      <div class="stat-content">
-        <div class="stat-value">{unreadMessages}</div>
-        <div class="stat-label">Unread</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">📅</div>
-      <div class="stat-content">
-        <div class="stat-value">{todayMessages}</div>
-        <div class="stat-label">Today</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">✉️</div>
-      <div class="stat-content">
-        <div class="stat-value">{totalMessages - unreadMessages}</div>
-        <div class="stat-label">Read</div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Inbox Layout -->
-  <div class="inbox-layout">
-    <!-- Message List -->
-    <div class="message-list-container">
-      <div class="list-header">
-        <div class="filter-tabs">
-          <a href="/admin/messages" class:list={["filter-tab", { active: filter === 'all' }]}>All</a>
-          <a href="/admin/messages?filter=unread" class:list={["filter-tab", { active: filter === 'unread' }]}>
-            Unread {unreadMessages > 0 && <span class="badge-count">{unreadMessages}</span>}
-          </a>
-          <a href="/admin/messages?filter=read" class:list={["filter-tab", { active: filter === 'read' }]}>Read</a>
+  ) : (
+    <>
+      <!-- Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">📬</div>
+          <div class="stat-content">
+            <div class="stat-value">{totalMessages}</div>
+            <div class="stat-label">Total Messages</div>
+          </div>
         </div>
-        
-        {unreadMessages > 0 && (
-          <form method="POST">
-            <button type="submit" name="action" value="mark_all_read" class="btn btn-sm btn-secondary">
-              ✓ Mark All Read
-            </button>
-          </form>
-        )}
+        <div class="stat-card urgent">
+          <div class="stat-icon">🔔</div>
+          <div class="stat-content">
+            <div class="stat-value">{unreadMessages}</div>
+            <div class="stat-label">Unread</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📅</div>
+          <div class="stat-content">
+            <div class="stat-value">{todayMessages}</div>
+            <div class="stat-label">Today</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">✉️</div>
+          <div class="stat-content">
+            <div class="stat-value">{totalMessages - unreadMessages}</div>
+            <div class="stat-label">Read</div>
+          </div>
+        </div>
       </div>
       
-      <div class="message-list">
-        {filteredMessages && filteredMessages.length > 0 ? (
-          filteredMessages.map(message => (
-            <a 
-              href={`/admin/messages?id=${message.id}${filter !== 'all' ? `&filter=${filter}` : ''}`}
-              class:list={["message-item", { unread: !message.is_read, selected: selectedId === message.id }]}
-            >
-              <div class="message-avatar">
-                <span>{message.name?.charAt(0) || message.email?.charAt(0)?.toUpperCase() || '?'}</span>
-              </div>
-              
-              <div class="message-preview">
-                <div class="message-header-row">
-                  <span class="message-sender">{message.name || message.email.split('@')[0]}</span>
-                  <span class="message-time">
-                    {new Date(message.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <div class="message-subject">
-                  {!message.is_read && <span class="unread-dot"></span>}
-                  {message.subject || '(No subject)'}
-                </div>
-                <div class="message-snippet">
-                  {message.body?.substring(0, 80) || '(No content)'}{message.body?.length > 80 ? '...' : ''}
-                </div>
-              </div>
-            </a>
-          ))
-        ) : (
-          <div class="empty-list">
-            <span>📭</span>
-            <p>No messages</p>
-          </div>
-        )}
-      </div>
-    </div>
-    
-    <!-- Message Detail -->
-    <div class="message-detail-container">
-      {selectedMessage ? (
-        <div class="message-detail">
-          <div class="detail-header">
-            <h2 class="detail-subject">{selectedMessage.subject || '(No subject)'}</h2>
+      <!-- Inbox Layout -->
+      <div class="inbox-layout">
+        <!-- Message List -->
+        <div class="message-list-container">
+          <div class="list-header">
+            <div class="filter-tabs">
+              <a href="/admin/messages" class:list={["filter-tab", { active: filter === 'all' }]}>All</a>
+              <a href="/admin/messages?filter=unread" class:list={["filter-tab", { active: filter === 'unread' }]}>
+                Unread {unreadMessages > 0 && <span class="badge-count">{unreadMessages}</span>}
+              </a>
+              <a href="/admin/messages?filter=read" class:list={["filter-tab", { active: filter === 'read' }]}>Read</a>
+            </div>
             
-            <div class="detail-actions">
-              <form method="POST" class="inline-form">
-                <input type="hidden" name="messageId" value={selectedMessage.id} />
-                {selectedMessage.is_read ? (
-                  <button type="submit" name="action" value="mark_unread" class="btn btn-sm btn-secondary" title="Mark as Unread">
-                    📩 Unread
-                  </button>
-                ) : (
-                  <button type="submit" name="action" value="mark_read" class="btn btn-sm btn-secondary" title="Mark as Read">
-                    ✓ Read
-                  </button>
-                )}
-              </form>
-              <form method="POST" class="inline-form">
-                <input type="hidden" name="messageId" value={selectedMessage.id} />
-                <button 
-                  type="submit" 
-                  name="action" 
-                  value="delete" 
-                  class="btn btn-sm btn-danger"
-                  onclick="return confirm('Delete this message?')"
-                  title="Delete"
-                >
-                  🗑️ Delete
+            {unreadMessages > 0 && (
+              <form method="POST">
+                <button type="submit" name="action" value="mark_all_read" class="btn btn-sm btn-secondary">
+                  ✓ Mark All Read
                 </button>
               </form>
-            </div>
+            )}
           </div>
           
-          <div class="sender-info">
-            <div class="sender-avatar">
-              <span>{selectedMessage.name?.charAt(0) || selectedMessage.email?.charAt(0)?.toUpperCase() || '?'}</span>
-            </div>
-            <div class="sender-details">
-              <div class="sender-name">{selectedMessage.name || 'Unknown'}</div>
-              <div class="sender-email">{selectedMessage.email}</div>
-            </div>
-            <div class="message-timestamp">
-              {new Date(selectedMessage.created_at).toLocaleString()}
-            </div>
-          </div>
-          
-          <div class="message-body">
-            {selectedMessage.body || '(No content)'}
-          </div>
-          
-          <div class="reply-section">
-            <a href={`mailto:${selectedMessage.email}?subject=Re: ${selectedMessage.subject}`} class="btn btn-primary">
-              <span>↩️</span> Reply via Email
-            </a>
+          <div class="message-list">
+            {filteredMessages.length > 0 ? (
+              filteredMessages.map(msg => (
+                <a 
+                  href={`/admin/messages?id=${msg.id}${filter !== 'all' ? `&filter=${filter}` : ''}`}
+                  class:list={["message-item", { unread: !msg.is_read, selected: selectedId === msg.id }]}
+                >
+                  <div class="message-avatar">
+                    <span>{msg.name?.charAt(0) || msg.email?.charAt(0)?.toUpperCase() || '?'}</span>
+                  </div>
+                  
+                  <div class="message-preview">
+                    <div class="message-header-row">
+                      <span class="message-sender">{msg.name || msg.email?.split('@')[0] || 'Unknown'}</span>
+                      <span class="message-time">
+                        {new Date(msg.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div class="message-subject">
+                      {!msg.is_read && <span class="unread-dot"></span>}
+                      {msg.subject || '(No subject)'}
+                    </div>
+                    <div class="message-snippet">
+                      {msg.body?.substring(0, 80) || '(No content)'}{msg.body?.length > 80 ? '...' : ''}
+                    </div>
+                  </div>
+                </a>
+              ))
+            ) : (
+              <div class="empty-list">
+                <span>📭</span>
+                <p>No messages</p>
+              </div>
+            )}
           </div>
         </div>
-      ) : (
-        <div class="no-message-selected">
-          <div class="placeholder-icon">📬</div>
-          <h3>Select a message</h3>
-          <p>Choose a message from the list to view its contents</p>
+        
+        <!-- Message Detail -->
+        <div class="message-detail-container">
+          {selectedMessage ? (
+            <div class="message-detail">
+              <div class="detail-header">
+                <h2 class="detail-subject">{selectedMessage.subject || '(No subject)'}</h2>
+                
+                <div class="detail-actions">
+                  <form method="POST" class="inline-form">
+                    <input type="hidden" name="messageId" value={selectedMessage.id} />
+                    {selectedMessage.is_read ? (
+                      <button type="submit" name="action" value="mark_unread" class="btn btn-sm btn-secondary" title="Mark as Unread">
+                        📩 Unread
+                      </button>
+                    ) : (
+                      <button type="submit" name="action" value="mark_read" class="btn btn-sm btn-secondary" title="Mark as Read">
+                        ✓ Read
+                      </button>
+                    )}
+                  </form>
+                  <form method="POST" class="inline-form">
+                    <input type="hidden" name="messageId" value={selectedMessage.id} />
+                    <button 
+                      type="submit" 
+                      name="action" 
+                      value="delete" 
+                      class="btn btn-sm btn-danger"
+                      onclick="return confirm('Delete this message?')"
+                      title="Delete"
+                    >
+                      🗑️ Delete
+                    </button>
+                  </form>
+                </div>
+              </div>
+              
+              <div class="sender-info">
+                <div class="sender-avatar">
+                  <span>{selectedMessage.name?.charAt(0) || selectedMessage.email?.charAt(0)?.toUpperCase() || '?'}</span>
+                </div>
+                <div class="sender-details">
+                  <div class="sender-name">{selectedMessage.name || 'Unknown'}</div>
+                  <div class="sender-email">{selectedMessage.email}</div>
+                </div>
+                <div class="message-timestamp">
+                  {new Date(selectedMessage.created_at).toLocaleString()}
+                </div>
+              </div>
+              
+              <div class="message-body">
+                {selectedMessage.body || '(No content)'}
+              </div>
+              
+              <div class="reply-section">
+                <a href={`mailto:${selectedMessage.email}?subject=Re: ${selectedMessage.subject || ''}`} class="btn btn-primary">
+                  <span>↩️</span> Reply via Email
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div class="no-message-selected">
+              <div class="placeholder-icon">📬</div>
+              <h3>Select a message</h3>
+              <p>Choose a message from the list to view its contents</p>
+            </div>
+          )}
         </div>
-      )}
-    </div>
-  </div>
+      </div>
+    </>
+  )}
   
   <style>
     .stats-grid {
@@ -618,6 +626,24 @@ if (error?.code === '42P01') {
     .no-message-selected h3 {
       font-size: 1.125rem;
       color: #6b7280;
+      margin-bottom: 0.5rem;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #6b7280;
+    }
+    
+    .empty-state-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    
+    .empty-state-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #374151;
       margin-bottom: 0.5rem;
     }
     
