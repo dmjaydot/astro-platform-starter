@@ -65,10 +65,10 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-// Fetch campaigns with creator info
+// Fetch campaigns - only query columns that exist
 const { data: campaigns, error } = await supabase
   .from("campaigns")
-  .select("id, title, slug, status, created_at")
+  .select("*")
   .order("created_at", { ascending: false });
 
 // Calculate stats
@@ -88,17 +88,6 @@ const filteredCampaigns = campaigns?.filter(campaign => {
   if (filter === 'completed') return campaign.status === 'completed';
   return true;
 });
-
-// Helper to get status color
-function getStatusColor(status: string) {
-  switch(status) {
-    case 'active': return 'success';
-    case 'paused': return 'warning';
-    case 'completed': return 'info';
-    case 'draft': return 'secondary';
-    default: return 'secondary';
-  }
-}
 ---
 
 <AdminLayout title="Campaigns">
@@ -147,10 +136,6 @@ function getStatusColor(status: string) {
       <a href="/admin/campaigns?filter=paused" class:list={["filter-tab", { active: filter === 'paused' }]}>Paused</a>
       <a href="/admin/campaigns?filter=completed" class:list={["filter-tab", { active: filter === 'completed' }]}>Completed ({completedCampaigns})</a>
     </div>
-    
-    <a href="/admin/campaigns/new" class="btn btn-primary">
-      <span>+</span> New Campaign
-    </a>
   </div>
   
   <!-- Campaigns Grid -->
@@ -173,7 +158,7 @@ function getStatusColor(status: string) {
           
           <div class="campaign-body">
             <h3 class="campaign-title">{campaign.title}</h3>
-            <p class="campaign-slug">/{campaign.slug}</p>
+            {campaign.slug && <p class="campaign-slug">/{campaign.slug}</p>}
             
             {campaign.description && (
               <p class="campaign-description">
@@ -191,20 +176,14 @@ function getStatusColor(status: string) {
                 <span class="meta-value">{campaign.payment_per_post ? `$${campaign.payment_per_post}` : '—'}</span>
               </div>
               <div class="meta-item">
-                <span class="meta-label">Max Creators</span>
-                <span class="meta-value">{campaign.max_creators || '∞'}</span>
+                <span class="meta-label">Created</span>
+                <span class="meta-value">{new Date(campaign.created_at).toLocaleDateString()}</span>
               </div>
             </div>
             
             {campaign.deadline && (
               <div class="campaign-deadline">
                 <span>📅</span> Deadline: {new Date(campaign.deadline).toLocaleDateString()}
-              </div>
-            )}
-            
-            {campaign.profiles && (
-              <div class="campaign-brand">
-                By: {campaign.profiles.full_name || campaign.profiles.email}
               </div>
             )}
           </div>
@@ -252,9 +231,6 @@ function getStatusColor(status: string) {
         <div class="empty-state-icon">📢</div>
         <div class="empty-state-title">No campaigns found</div>
         <p>No campaigns match the selected filter.</p>
-        <a href="/admin/campaigns/new" class="btn btn-primary" style="margin-top: 1rem;">
-          Create First Campaign
-        </a>
       </div>
     </div>
   )}
@@ -478,11 +454,6 @@ function getStatusColor(status: string) {
       font-size: 0.8125rem;
       color: #6b7280;
       margin-bottom: 0.5rem;
-    }
-    
-    .campaign-brand {
-      font-size: 0.75rem;
-      color: #9ca3af;
     }
     
     .campaign-actions {
