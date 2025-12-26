@@ -15,7 +15,7 @@ if (!isMasterKeySession && !session) {
 
 const { data: communities, error } = await supabase
   .from("communities")
-  .select("id, name, slug, is_active, created_at")
+  .select("id, name, slug, created_at")
   .order("created_at", { ascending: false });
 ---
 
