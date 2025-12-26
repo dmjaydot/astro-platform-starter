@@ -1,0 +1,268 @@
+---
+// src/pages/signup.astro
+export const prerender = false;
+
+import Layout from "../layouts/Layout.astro";
+import { supabase } from "../lib/supabase";
+import { getSetting } from "../lib/settings";
+
+// Check if signup is enabled
+const security = await getSetting('security');
+if (!security.enableSignup) {
+  return Astro.redirect('/?error=signup_disabled');
+}
+
+// Get appearance settings for button colors
+const appearance = await getSetting('appearance');
+const general = await getSetting('general');
+
+let errorMessage = '';
+let successMessage = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const email = form.get('email') as string;
+  const password = form.get('password') as string;
+  const confirmPassword = form.get('confirmPassword') as string;
+  const fullName = form.get('fullName') as string;
+  
+  if (password !== confirmPassword) {
+    errorMessage = 'Passwords do not match.';
+  } else if (password.length < 8) {
+    errorMessage = 'Password must be at least 8 characters.';
+  } else {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
+        emailRedirectTo: `${Astro.url.origin}/auth/callback`,
+      },
+    });
+    
+    if (error) {
+      errorMessage = error.message;
+    } else if (data.user) {
+      // Create profile
+      await supabase.from('profiles').upsert({
+        id: data.user.id,
+        email: data.user.email,
+        full_name: fullName,
+        role: 'creator',
+        is_active: true,
+      });
+      
+      if (security.requireEmailVerify) {
+        successMessage = 'Account created! Please check your email to verify your account.';
+      } else {
+        return Astro.redirect('/dashboard');
+      }
+    }
+  }
+}
+---
+
+<Layout title="Sign Up">
+  <div class="auth-page">
+    <div class="auth-container">
+      <div class="auth-header">
+        <h1>Create an Account</h1>
+        <p>Join {general.siteName} and start creating</p>
+      </div>
+      
+      {errorMessage && <div class="alert error">{errorMessage}</div>}
+      {successMessage && <div class="alert success">{successMessage}</div>}
+      
+      {!successMessage && (
+        <form method="POST" class="auth-form">
+          <div class="form-group">
+            <label for="fullName">Full Name</label>
+            <input 
+              type="text" 
+              id="fullName" 
+              name="fullName" 
+              required 
+              placeholder="John Doe"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input 
+              type="email" 
+              id="email" 
+              name="email" 
+              required 
+              placeholder="you@example.com"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input 
+              type="password" 
+              id="password" 
+              name="password" 
+              required 
+              minlength="8"
+              placeholder="••••••••"
+            />
+            <span class="form-hint">At least 8 characters</span>
+          </div>
+          
+          <div class="form-group">
+            <label for="confirmPassword">Confirm Password</label>
+            <input 
+              type="password" 
+              id="confirmPassword" 
+              name="confirmPassword" 
+              required 
+              placeholder="••••••••"
+            />
+          </div>
+          
+          <button type="submit" class="btn btn-primary btn-block">
+            Create Account
+          </button>
+          
+          <p class="auth-footer">
+            Already have an account? <a href="/login">Log in</a>
+          </p>
+        </form>
+      )}
+    </div>
+  </div>
+  
+  <style define:vars={{ primaryColor: appearance.primaryColor }}>
+    .auth-page {
+      min-height: calc(100vh - 70px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    }
+    
+    .auth-container {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      width: 100%;
+      max-width: 420px;
+    }
+    
+    .auth-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .auth-header h1 {
+      font-size: 1.75rem;
+      color: #1a1a2e;
+      margin-bottom: 0.5rem;
+    }
+    
+    .auth-header p {
+      color: #6b7280;
+    }
+    
+    .alert {
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9375rem;
+    }
+    
+    .alert.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    
+    .alert.success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+    
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .form-group label {
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: #374151;
+    }
+    
+    .form-group input {
+      padding: 0.75rem 1rem;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+    
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--primaryColor);
+    }
+    
+    .form-hint {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+    
+    .btn {
+      padding: 0.875rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: var(--primaryColor);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+    
+    .btn-block {
+      width: 100%;
+    }
+    
+    .auth-footer {
+      text-align: center;
+      color: #6b7280;
+      font-size: 0.9375rem;
+      margin-top: 0.5rem;
+    }
+    
+    .auth-footer a {
+      color: var(--primaryColor);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    
+    .auth-footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</Layout>
