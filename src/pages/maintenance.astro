@@ -1,0 +1,123 @@
+---
+// src/pages/maintenance.astro
+// This page is shown when maintenance mode is enabled
+
+import { getSetting } from "../lib/settings";
+
+const general = await getSetting('general');
+const appearance = await getSetting('appearance');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maintenance | {general.siteName}</title>
+    <style define:vars={{ 
+      primaryColor: appearance.primaryColor,
+      accentColor: appearance.accentColor 
+    }}>
+      :root {
+        --color-primary: var(--primaryColor);
+        --color-accent: var(--accentColor);
+      }
+      
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
+      
+      .maintenance-container {
+        text-align: center;
+        max-width: 500px;
+      }
+      
+      .maintenance-icon {
+        font-size: 5rem;
+        margin-bottom: 2rem;
+        animation: pulse 2s ease-in-out infinite;
+      }
+      
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+      }
+      
+      h1 {
+        color: white;
+        font-size: 2rem;
+        margin-bottom: 1rem;
+      }
+      
+      p {
+        color: #9ca3af;
+        font-size: 1.125rem;
+        line-height: 1.7;
+        margin-bottom: 2rem;
+      }
+      
+      .brand {
+        margin-top: 3rem;
+        padding-top: 2rem;
+        border-top: 1px solid rgba(255,255,255,0.1);
+      }
+      
+      .brand-name {
+        color: var(--color-primary);
+        font-size: 1.25rem;
+        font-weight: 700;
+      }
+      
+      .admin-link {
+        display: inline-block;
+        margin-top: 2rem;
+        padding: 0.75rem 1.5rem;
+        background: rgba(255,255,255,0.1);
+        color: #9ca3af;
+        text-decoration: none;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        transition: all 0.2s;
+      }
+      
+      .admin-link:hover {
+        background: rgba(255,255,255,0.2);
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="maintenance-container">
+      <div class="maintenance-icon">🔧</div>
+      <h1>We'll Be Right Back</h1>
+      <p>
+        We're currently performing scheduled maintenance to improve your experience. 
+        Please check back soon!
+      </p>
+      <p style="font-size: 0.9375rem;">
+        If you need immediate assistance, please contact us at 
+        <a href={`mailto:${general.supportEmail}`} style="color: var(--color-primary);">
+          {general.supportEmail}
+        </a>
+      </p>
+      
+      <div class="brand">
+        <span class="brand-name">{general.siteName}</span>
+      </div>
+      
+      <a href="/admin/login" class="admin-link">Admin Access →</a>
+    </div>
+  </body>
+</html>
