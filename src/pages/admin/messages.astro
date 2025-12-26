@@ -99,6 +99,16 @@ if (selectedMessage && !selectedMessage.is_read) {
     .eq('id', selectedMessage.id);
   selectedMessage.is_read = true;
 }
+
+const { data: messages, error } = await supabase
+  .from("messages")
+  .select("*")
+  .order("created_at", { ascending: false });
+
+// If table doesn't exist, show empty state
+if (error?.code === '42P01') {
+  // Table doesn't exist - show setup message
+}
 ---
 
 <AdminLayout title="Messages">
