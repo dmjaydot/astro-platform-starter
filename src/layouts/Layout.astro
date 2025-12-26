@@ -1,167 +1,344 @@
 ---
-const { title, session = null, userProfile = null, isUserAdmin = false } = Astro.props;
-const userRole = userProfile?.role ?? null;
+// src/layouts/Layout.astro
+import SiteHead from "../components/SiteHead.astro";
+import { getSetting } from "../lib/settings";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+
+// Load settings for header/footer
+const general = await getSetting('general');
+const appearance = await getSetting('appearance');
 ---
-<!DOCTYPE html>
+
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{title} - Banity</title>
-  <meta name="description" content="Banity connects creators with brands for authentic UGC campaigns.">
-
-  <!-- TikTok Developer Verification -->
-  <meta
-    name="tiktok-developers-site-verification"
-    content="kqRzP0NUfs1VEpvwniGRaTs9t2cfdRbj"
-  />
-
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-
-  <style>
-    :root {
-      --font-serif: 'Crimson Pro', serif;
-      --font-sans: 'DM Sans', sans-serif;
-      --color-accent: #2563eb;
-      --color-accent-light: #dbeafe;
-      --color-muted: #6b7280;
-      --color-border: #e5e7eb;
-      --color-background: #f9fafb;
-    }
-
-    body {
-      margin: 0;
-      font-family: var(--font-sans);
-      background: var(--color-background);
-      color: #111827;
-    }
-
-    a { text-decoration: none; }
-
-    .site-header {
-      width: 100%;
-      background: white;
-      padding: 1rem 2rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .header-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .logo { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 700; color: var(--color-accent); }
-
-    .nav-links { display: flex; gap: 1.5rem; align-items: center; }
-    .nav-link { color: #111827; font-weight: 500; transition: color 0.2s; }
-    .nav-link:hover { color: var(--color-accent); }
-    .portal-link { font-weight: 600; }
-
-    .nav-right { display: flex; align-items: center; gap: 1rem; }
-    .cta-btn { padding: 0.5rem 1.5rem; background: var(--color-accent); color: white; border-radius: 8px; font-weight: 600; }
-    .cta-btn:hover { background: #1d4ed8; }
-
-    .user-menu {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-weight: 500;
-    }
-
-    .user-avatar {
-      width: 2rem;
-      height: 2rem;
-      background: var(--color-accent-light);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 600;
-      color: var(--color-accent);
-      text-transform: uppercase;
-    }
-
-    .role-badge {
-      padding: 0.1rem 0.5rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      text-transform: capitalize;
-      color: white;
-    }
-
-    .role-badge.manager { background: #f59e0b; }
-    .role-badge.moderator { background: #10b981; }
-
-    main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-
-    .footer {
-      width: 100%;
-      background: white;
-      border-top: 1px solid var(--color-border);
-      padding: 2rem;
-      margin-top: 4rem;
-    }
-    .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
-    .footer-text { font-size: 0.875rem; color: var(--color-muted); }
-    .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-    .footer-link { font-size: 0.875rem; color: var(--color-muted); transition: color 0.2s; }
-    .footer-link:hover { color: var(--color-accent); }
-  </style>
-</head>
-<body>
-  <header class="site-header">
-    <div class="header-inner">
-      <a href="/" class="logo">Banity</a>
-
-      <nav class="nav-links">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/campaigns" class="nav-link">Campaigns</a>
-        <a href="/community" class="nav-link">Community</a>
-
-        {isUserAdmin && <a href="/admin" class="nav-link portal-link">Admin Portal</a>}
-        {userRole === 'manager' && <a href="/campaigns/manage" class="nav-link portal-link">Manager Portal</a>}
-        {userRole === 'moderator' && <a href="/admin/review" class="nav-link portal-link">Mod Queue</a>}
-      </nav>
-
-      <div class="nav-right">
-        {session ? (
-          <div class="user-menu">
-            <div class="user-avatar">
-              {userProfile?.full_name?.charAt(0) || session.user.email?.charAt(0).toUpperCase()}
-            </div>
-            <span class="user-name">{userProfile?.full_name || 'User'}</span>
-            {userRole && <span class={`role-badge ${userRole}`}>{userRole}</span>}
-          </div>
-        ) : (
-          <a href="/clips" class="cta-btn">Join Banity</a>
-        )}
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <SiteHead title={title} description={description} />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-container">
+        <a href="/" class="logo">
+          {appearance.logoUrl ? (
+            <img src={appearance.logoUrl} alt={general.siteName} class="logo-image" />
+          ) : (
+            <span class="logo-text">{general.siteName}</span>
+          )}
+        </a>
+        
+        <nav class="main-nav">
+          <a href="/campaigns">Campaigns</a>
+          <a href="/creators">Creators</a>
+          <a href="/about">About</a>
+          <a href="/contact">Contact</a>
+        </nav>
+        
+        <div class="header-actions">
+          <a href="/login" class="btn btn-secondary">Log In</a>
+          <a href="/signup" class="btn btn-primary">Sign Up</a>
+        </div>
+        
+        <button class="mobile-menu-toggle" aria-label="Toggle menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
       </div>
-    </div>
-  </header>
-
-  <main>
-    <slot />
-  </main>
-
-  <footer class="footer">
-    <div class="footer-inner">
-      <p class="footer-text">© 2025 Banity Ltd. All rights reserved.</p>
-      <nav class="footer-links">
-        <a href="/" class="footer-link">Home</a>
-        <a href="/campaigns" class="footer-link">Campaigns</a>
-        <a href="/community" class="footer-link">Community</a>
-        <a href="/legal" class="footer-link">Legal</a>
-      </nav>
-    </div>
-  </footer>
-</body>
+    </header>
+    
+    <main>
+      <slot />
+    </main>
+    
+    <footer class="site-footer">
+      <div class="footer-container">
+        <div class="footer-brand">
+          {appearance.logoUrl ? (
+            <img src={appearance.logoUrl} alt={general.siteName} class="footer-logo" />
+          ) : (
+            <span class="footer-logo-text">{general.siteName}</span>
+          )}
+          <p class="footer-tagline">{general.tagline}</p>
+        </div>
+        
+        <div class="footer-links">
+          <div class="footer-column">
+            <h4>Platform</h4>
+            <a href="/campaigns">Browse Campaigns</a>
+            <a href="/creators">For Creators</a>
+            <a href="/brands">For Brands</a>
+          </div>
+          
+          <div class="footer-column">
+            <h4>Company</h4>
+            <a href="/about">About Us</a>
+            <a href="/contact">Contact</a>
+            <a href="/blog">Blog</a>
+          </div>
+          
+          <div class="footer-column">
+            <h4>Legal</h4>
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms of Service</a>
+          </div>
+          
+          <div class="footer-column">
+            <h4>Support</h4>
+            <a href="/help">Help Center</a>
+            <a href={`mailto:${general.supportEmail}`}>Email Support</a>
+          </div>
+        </div>
+        
+        <div class="footer-bottom">
+          <p>&copy; {new Date().getFullYear()} {general.siteName}. All rights reserved.</p>
+        </div>
+      </div>
+    </footer>
+    
+    <style>
+      :root {
+        --header-height: 70px;
+      }
+      
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        line-height: 1.6;
+        color: #1a1a2e;
+        background: #f8fafc;
+      }
+      
+      /* Header */
+      .site-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: var(--header-height);
+        background: white;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        z-index: 1000;
+      }
+      
+      .header-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 2rem;
+      }
+      
+      .logo {
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+      }
+      
+      .logo-image {
+        height: 36px;
+        width: auto;
+      }
+      
+      .logo-text {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--color-primary, #2563eb);
+      }
+      
+      .main-nav {
+        display: flex;
+        gap: 2rem;
+      }
+      
+      .main-nav a {
+        text-decoration: none;
+        color: #4b5563;
+        font-weight: 500;
+        font-size: 0.9375rem;
+        transition: color 0.2s;
+      }
+      
+      .main-nav a:hover {
+        color: var(--color-primary, #2563eb);
+      }
+      
+      .header-actions {
+        display: flex;
+        gap: 0.75rem;
+      }
+      
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.875rem;
+        text-decoration: none;
+        transition: all 0.2s;
+        border: none;
+        cursor: pointer;
+      }
+      
+      .btn-primary {
+        background: var(--color-primary, #2563eb);
+        color: white;
+      }
+      
+      .btn-primary:hover {
+        background: var(--color-primary-dark, #1d4ed8);
+      }
+      
+      .btn-secondary {
+        background: transparent;
+        color: #4b5563;
+        border: 2px solid #e5e7eb;
+      }
+      
+      .btn-secondary:hover {
+        border-color: var(--color-primary, #2563eb);
+        color: var(--color-primary, #2563eb);
+      }
+      
+      .mobile-menu-toggle {
+        display: none;
+        flex-direction: column;
+        gap: 5px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 5px;
+      }
+      
+      .mobile-menu-toggle span {
+        display: block;
+        width: 24px;
+        height: 2px;
+        background: #1a1a2e;
+        transition: all 0.3s;
+      }
+      
+      /* Main Content */
+      main {
+        min-height: calc(100vh - var(--header-height) - 300px);
+        padding-top: var(--header-height);
+      }
+      
+      /* Footer */
+      .site-footer {
+        background: #1a1a2e;
+        color: #9ca3af;
+        padding: 4rem 0 2rem;
+      }
+      
+      .footer-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+      }
+      
+      .footer-brand {
+        margin-bottom: 3rem;
+      }
+      
+      .footer-logo {
+        height: 32px;
+        width: auto;
+        filter: brightness(0) invert(1);
+      }
+      
+      .footer-logo-text {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: white;
+      }
+      
+      .footer-tagline {
+        margin-top: 0.5rem;
+        font-size: 0.9375rem;
+      }
+      
+      .footer-links {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 2rem;
+        margin-bottom: 3rem;
+      }
+      
+      .footer-column h4 {
+        color: white;
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      
+      .footer-column a {
+        display: block;
+        color: #9ca3af;
+        text-decoration: none;
+        font-size: 0.9375rem;
+        margin-bottom: 0.75rem;
+        transition: color 0.2s;
+      }
+      
+      .footer-column a:hover {
+        color: white;
+      }
+      
+      .footer-bottom {
+        padding-top: 2rem;
+        border-top: 1px solid #374151;
+        text-align: center;
+        font-size: 0.875rem;
+      }
+      
+      /* Responsive */
+      @media (max-width: 768px) {
+        .main-nav,
+        .header-actions {
+          display: none;
+        }
+        
+        .mobile-menu-toggle {
+          display: flex;
+        }
+        
+        .footer-links {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      
+      @media (max-width: 480px) {
+        .footer-links {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    
+    <script is:inline>
+      // Mobile menu toggle
+      document.querySelector('.mobile-menu-toggle')?.addEventListener('click', function() {
+        this.classList.toggle('active');
+        // Add mobile menu logic here
+      });
+    </script>
+  </body>
 </html>
