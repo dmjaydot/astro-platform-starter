@@ -1,0 +1,17 @@
+---
+// src/pages/logout.astro
+export const prerender = false;
+
+import { supabase } from "../lib/supabase";
+
+// Sign out from Supabase
+await supabase.auth.signOut();
+
+// Clear cookies
+Astro.cookies.delete("sb-access-token", { path: "/" });
+Astro.cookies.delete("sb-refresh-token", { path: "/" });
+Astro.cookies.delete("master_key_session", { path: "/" });
+
+// Redirect to home
+return Astro.redirect('/?logged_out=true');
+---
