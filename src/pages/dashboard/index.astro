@@ -1,0 +1,551 @@
+---
+// src/pages/dashboard/index.astro
+export const prerender = false;
+
+import Layout from "../../layouts/Layout.astro";
+import { supabase } from "../../lib/supabase";
+import { getSetting } from "../../lib/settings";
+
+// Get session from middleware
+const session = Astro.locals.session;
+const profile = Astro.locals.profile;
+
+if (!session) {
+  return Astro.redirect('/login?redirect=/dashboard');
+}
+
+// Get settings
+const general = await getSetting('general');
+const appearance = await getSetting('appearance');
+
+// Fetch user's posts
+const { data: posts } = await supabase
+  .from('posts')
+  .select('id, title, status, created_at, campaigns(title)')
+  .eq('creator_id', session.user.id)
+  .order('created_at', { ascending: false })
+  .limit(5);
+
+// Fetch available campaigns
+const { data: campaigns } = await supabase
+  .from('campaigns')
+  .select('id, title, slug, status, budget, payment_per_post, deadline')
+  .eq('status', 'active')
+  .order('created_at', { ascending: false })
+  .limit(6);
+
+// Calculate stats
+const { count: totalPosts } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact', head: true })
+  .eq('creator_id', session.user.id);
+
+const { count: approvedPosts } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact', head: true })
+  .eq('creator_id', session.user.id)
+  .eq('status', 'approved');
+
+const { count: pendingPosts } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact', head: true })
+  .eq('creator_id', session.user.id)
+  .eq('status', 'pending');
+---
+
+<Layout title="Dashboard">
+  <div class="dashboard">
+    <div class="dashboard-container">
+      <!-- Header -->
+      <div class="dashboard-header">
+        <div class="welcome">
+          <h1>Welcome back, {profile?.full_name || session.user.email?.split('@')[0]}!</h1>
+          <p>Here's what's happening with your content</p>
+        </div>
+        <a href="/dashboard/submit" class="btn btn-primary">
+          <span>+</span> Submit Content
+        </a>
+      </div>
+      
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">📝</div>
+          <div class="stat-content">
+            <div class="stat-value">{totalPosts || 0}</div>
+            <div class="stat-label">Total Submissions</div>
+          </div>
+        </div>
+        <div class="stat-card success">
+          <div class="stat-icon">✅</div>
+          <div class="stat-content">
+            <div class="stat-value">{approvedPosts || 0}</div>
+            <div class="stat-label">Approved</div>
+          </div>
+        </div>
+        <div class="stat-card warning">
+          <div class="stat-icon">⏳</div>
+          <div class="stat-content">
+            <div class="stat-value">{pendingPosts || 0}</div>
+            <div class="stat-label">Pending Review</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">💰</div>
+          <div class="stat-content">
+            <div class="stat-value">$0</div>
+            <div class="stat-label">Earnings</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="dashboard-grid">
+        <!-- Recent Submissions -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Recent Submissions</h2>
+            <a href="/dashboard/posts" class="view-all">View All →</a>
+          </div>
+          
+          {posts && posts.length > 0 ? (
+            <div class="posts-list">
+              {posts.map(post => (
+                <div class="post-item">
+                  <div class="post-info">
+                    <div class="post-title">{post.title || 'Untitled'}</div>
+                    <div class="post-campaign">{post.campaigns?.title || 'No campaign'}</div>
+                  </div>
+                  <div class="post-meta">
+                    <span class={`status-badge status-${post.status}`}>{post.status}</span>
+                    <span class="post-date">{new Date(post.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div class="empty-state">
+              <span>📝</span>
+              <p>No submissions yet</p>
+              <a href="/dashboard/submit" class="btn btn-sm btn-primary">Submit Your First Content</a>
+            </div>
+          )}
+        </div>
+        
+        <!-- Available Campaigns -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Available Campaigns</h2>
+            <a href="/campaigns" class="view-all">Browse All →</a>
+          </div>
+          
+          {campaigns && campaigns.length > 0 ? (
+            <div class="campaigns-list">
+              {campaigns.map(campaign => (
+                <a href={`/campaigns/${campaign.slug}`} class="campaign-item">
+                  <div class="campaign-info">
+                    <div class="campaign-title">{campaign.title}</div>
+                    {campaign.payment_per_post && (
+                      <div class="campaign-pay">${campaign.payment_per_post} per post</div>
+                    )}
+                  </div>
+                  {campaign.deadline && (
+                    <div class="campaign-deadline">
+                      Due {new Date(campaign.deadline).toLocaleDateString()}
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div class="empty-state">
+              <span>📢</span>
+              <p>No active campaigns</p>
+              <p class="empty-hint">Check back soon for new opportunities!</p>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <!-- Quick Actions -->
+      <div class="quick-actions">
+        <h3>Quick Actions</h3>
+        <div class="actions-grid">
+          <a href="/dashboard/profile" class="action-card">
+            <span>👤</span>
+            <div>
+              <strong>Edit Profile</strong>
+              <p>Update your bio and portfolio</p>
+            </div>
+          </a>
+          <a href="/campaigns" class="action-card">
+            <span>📢</span>
+            <div>
+              <strong>Browse Campaigns</strong>
+              <p>Find new opportunities</p>
+            </div>
+          </a>
+          <a href="/dashboard/earnings" class="action-card">
+            <span>💳</span>
+            <div>
+              <strong>View Earnings</strong>
+              <p>Track your payments</p>
+            </div>
+          </a>
+          <a href="/dashboard/settings" class="action-card">
+            <span>⚙️</span>
+            <div>
+              <strong>Settings</strong>
+              <p>Manage your account</p>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <style define:vars={{ primaryColor: appearance.primaryColor, accentColor: appearance.accentColor }}>
+    .dashboard {
+      background: #f8fafc;
+      min-height: calc(100vh - 70px);
+      padding: 2rem;
+    }
+    
+    .dashboard-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    .dashboard-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+    
+    .welcome h1 {
+      font-size: 1.75rem;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+    
+    .welcome p {
+      color: #6b7280;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+    
+    .btn-primary {
+      background: var(--primaryColor);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+    
+    .btn-sm {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+    }
+    
+    /* Stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .stat-card.success {
+      border-left: 4px solid var(--accentColor);
+    }
+    
+    .stat-card.warning {
+      border-left: 4px solid #f59e0b;
+    }
+    
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+    
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    
+    .stat-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+    
+    /* Dashboard Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .panel {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      overflow: hidden;
+    }
+    
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .panel-header h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    
+    .view-all {
+      font-size: 0.875rem;
+      color: var(--primaryColor);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    
+    .view-all:hover {
+      text-decoration: underline;
+    }
+    
+    /* Posts List */
+    .posts-list {
+      padding: 0;
+    }
+    
+    .post-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .post-item:last-child {
+      border-bottom: none;
+    }
+    
+    .post-title {
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+    
+    .post-campaign {
+      font-size: 0.8125rem;
+      color: #6b7280;
+    }
+    
+    .post-meta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .status-badge {
+      font-size: 0.6875rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .status-pending { background: #fef3c7; color: #d97706; }
+    .status-approved { background: #d1fae5; color: #059669; }
+    .status-rejected { background: #fee2e2; color: #dc2626; }
+    .status-revision_requested { background: #dbeafe; color: #2563eb; }
+    
+    .post-date {
+      font-size: 0.8125rem;
+      color: #9ca3af;
+    }
+    
+    /* Campaigns List */
+    .campaigns-list {
+      padding: 0;
+    }
+    
+    .campaign-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #f0f0f0;
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.2s;
+    }
+    
+    .campaign-item:last-child {
+      border-bottom: none;
+    }
+    
+    .campaign-item:hover {
+      background: #f9fafb;
+    }
+    
+    .campaign-title {
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+    
+    .campaign-pay {
+      font-size: 0.875rem;
+      color: var(--accentColor);
+      font-weight: 600;
+    }
+    
+    .campaign-deadline {
+      font-size: 0.8125rem;
+      color: #6b7280;
+    }
+    
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: #6b7280;
+    }
+    
+    .empty-state span {
+      font-size: 2.5rem;
+      display: block;
+      margin-bottom: 1rem;
+    }
+    
+    .empty-state p {
+      margin-bottom: 0.5rem;
+    }
+    
+    .empty-hint {
+      font-size: 0.875rem;
+      color: #9ca3af;
+    }
+    
+    /* Quick Actions */
+    .quick-actions h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 1rem;
+    }
+    
+    .actions-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+    
+    .action-card {
+      background: white;
+      padding: 1.25rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      transition: all 0.2s;
+    }
+    
+    .action-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .action-card span {
+      font-size: 1.5rem;
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .action-card strong {
+      display: block;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+    
+    .action-card p {
+      font-size: 0.8125rem;
+      color: #6b7280;
+      margin: 0;
+    }
+    
+    @media (max-width: 1024px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .actions-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+      }
+      
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .actions-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</Layout>
