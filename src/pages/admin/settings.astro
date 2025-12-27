@@ -22,6 +22,7 @@ const defaults = {
     supportEmail: 'support@banity.com',
     contactEmail: 'hello@banity.com',
     timezone: 'America/Los_Angeles',
+    registrationMode: 'waitlist', // 'open', 'waitlist', 'closed'
   },
   appearance: {
     primaryColor: '#2563eb',
@@ -53,6 +54,7 @@ if (Astro.request.method === 'POST') {
       supportEmail: form.get('supportEmail') || defaults.general.supportEmail,
       contactEmail: form.get('contactEmail') || defaults.general.contactEmail,
       timezone: form.get('timezone') || defaults.general.timezone,
+      registrationMode: form.get('registrationMode') || defaults.general.registrationMode,
     };
 
     const { error } = await supabase
@@ -143,6 +145,14 @@ const section = Astro.url.searchParams.get('section') || 'general';
                 <option value="UTC" selected={settings.general.timezone === 'UTC'}>UTC</option>
               </select>
             </label>
+            <label>Registration Mode
+              <select name="registrationMode">
+                <option value="open" selected={settings.general.registrationMode === 'open'}>🟢 Open - Anyone can sign up</option>
+                <option value="waitlist" selected={settings.general.registrationMode === 'waitlist'}>⏳ Waitlist - Require approval</option>
+                <option value="closed" selected={settings.general.registrationMode === 'closed'}>🔴 Closed - No new signups</option>
+              </select>
+              <span class="hint">Controls how new user signups are handled.</span>
+            </label>
             <button type="submit">Save General Settings</button>
           </form>
         </div>
@@ -217,6 +227,7 @@ const section = Astro.url.searchParams.get('section') || 'general';
     .toggle input { width: 20px; height: 20px; }
     button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
     button:hover { background: #1d4ed8; }
+    .hint { font-size: 0.75rem; color: #9ca3af; font-weight: 400; margin-top: 0.25rem; }
     .alert { padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
     .alert.success { background: #d1fae5; color: #065f46; }
     .alert.error { background: #fee2e2; color: #991b1b; }
