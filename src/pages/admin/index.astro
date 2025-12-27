@@ -2,488 +2,515 @@
 // src/pages/admin/index.astro
 export const prerender = false;
 
-import { supabase } from '../../lib/supabase';
+import AdminLayout from "../../layouts/AdminLayout.astro";
+import { supabase } from "../../lib/supabase";
 
-const masterKey = import.meta.env.ADMIN_MASTER_KEY;
-
-// Handle logout
-if (Astro.url.searchParams.get('logout') === 'true') {
-  Astro.cookies.delete('sb-access-token', { path: '/' });
-  Astro.cookies.delete('sb-refresh-token', { path: '/' });
-  Astro.cookies.delete('admin-master-session', { path: '/' });
-  return Astro.redirect('/admin/login');
-}
-
-// Get auth state from middleware (already validated)
+// Auth from middleware
 const isMasterKeySession = Astro.locals.isMasterKeySession || false;
 const session = Astro.locals.session;
-const profile = Astro.locals.profile;
 
-// Safety fallback (middleware should prevent this)
+// Redirect if not authenticated
 if (!isMasterKeySession && !session) {
   return Astro.redirect('/admin/login');
 }
 
-// Initialize stats with defaults
-let stats = {
-  totalUsers: 0,
-  totalCampaigns: 0,
-  pendingPosts: 0,
-  totalCommunities: 0
-};
-let recentUsers: any[] = [];
-let pendingReviews: any[] = [];
-let errors: string[] = [];
-
 // Fetch dashboard stats with error handling
+let userCount = 0;
+let campaignCount = 0;
+let pendingReviewCount = 0;
+let communityCount = 0;
+let recentUsers: any[] = [];
+let pendingPosts: any[] = [];
+let error = null;
+
 try {
-  const { count, error } = await supabase
+  // Get counts
+  const { count: users } = await supabase
     .from('profiles')
     .select('*', { count: 'exact', head: true });
-  
-  if (error) throw error;
-  stats.totalUsers = count || 0;
-} catch (err: any) {
-  console.error('Failed to fetch users count:', err.message);
-  errors.push('Unable to load user count');
-}
+  userCount = users || 0;
 
-try {
-  const { count, error } = await supabase
+  const { count: campaigns } = await supabase
     .from('campaigns')
     .select('*', { count: 'exact', head: true });
-  
-  if (error) throw error;
-  stats.totalCampaigns = count || 0;
-} catch (err: any) {
-  console.error('Failed to fetch campaigns count:', err.message);
-  errors.push('Unable to load campaign count');
-}
+  campaignCount = campaigns || 0;
 
-try {
-  const { count, error } = await supabase
+  const { count: pending } = await supabase
     .from('posts')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'pending');
-  
-  if (error) throw error;
-  stats.pendingPosts = count || 0;
-} catch (err: any) {
-  console.error('Failed to fetch pending posts:', err.message);
-  errors.push('Unable to load pending reviews count');
-}
+  pendingReviewCount = pending || 0;
 
-try {
-  const { count, error } = await supabase
+  const { count: communities } = await supabase
     .from('communities')
     .select('*', { count: 'exact', head: true });
-  
-  if (error) throw error;
-  stats.totalCommunities = count || 0;
-} catch (err: any) {
-  console.error('Failed to fetch communities count:', err.message);
-  errors.push('Unable to load community count');
-}
+  communityCount = communities || 0;
 
-// Fetch recent users with error handling
-try {
-  const { data, error } = await supabase
+  // Get recent users
+  const { data: usersData } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, email, full_name, role, created_at, avatar_url')
     .order('created_at', { ascending: false })
     .limit(5);
-  
-  if (error) throw error;
-  recentUsers = data || [];
-} catch (err: any) {
-  console.error('Failed to fetch recent users:', err.message);
-  errors.push('Unable to load recent users');
-}
+  recentUsers = usersData || [];
 
-// Fetch pending reviews with error handling
-try {
-  const { data, error } = await supabase
+  // Get pending posts
+  const { data: postsData } = await supabase
     .from('posts')
-    .select('*, profiles!creator_id(full_name, email), campaigns(title)')
+    .select('id, title, created_at, profiles!creator_id(full_name, email)')
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
     .limit(5);
-  
-  if (error) throw error;
-  pendingReviews = data || [];
-} catch (err: any) {
-  console.error('Failed to fetch pending reviews:', err.message);
-  errors.push('Unable to load pending reviews');
+  pendingPosts = postsData || [];
+} catch (e: any) {
+  error = e.message || 'Failed to load dashboard data';
 }
-
-const hasErrors = errors.length > 0;
 ---
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Dashboard - Banity</title>
+<AdminLayout title="Dashboard">
+  {error && (
+    <div class="alert error">
+      <strong>Error loading data:</strong> {error}
+      <button onclick="location.reload()" class="btn btn-sm btn-secondary" style="margin-left: 1rem;">
+        Retry
+      </button>
+    </div>
+  )}
+  
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon">👥</div>
+      <div class="stat-content">
+        <div class="stat-value">{userCount}</div>
+        <div class="stat-label">Total Users</div>
+      </div>
+      <a href="/admin/users" class="stat-link">View →</a>
+    </div>
+    
+    <div class="stat-card">
+      <div class="stat-icon">📢</div>
+      <div class="stat-content">
+        <div class="stat-value">{campaignCount}</div>
+        <div class="stat-label">Campaigns</div>
+      </div>
+      <a href="/admin/campaigns" class="stat-link">View →</a>
+    </div>
+    
+    <div class="stat-card highlight">
+      <div class="stat-icon">⏳</div>
+      <div class="stat-content">
+        <div class="stat-value">{pendingReviewCount}</div>
+        <div class="stat-label">Pending Review</div>
+      </div>
+      <a href="/admin/review" class="stat-link">Review →</a>
+    </div>
+    
+    <div class="stat-card">
+      <div class="stat-icon">💬</div>
+      <div class="stat-content">
+        <div class="stat-value">{communityCount}</div>
+        <div class="stat-label">Communities</div>
+      </div>
+      <a href="/admin/communities" class="stat-link">View →</a>
+    </div>
+  </div>
+  
+  <!-- Dashboard Grid -->
+  <div class="dashboard-grid">
+    <!-- Recent Users -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Recent Users</h2>
+        <a href="/admin/users" class="panel-action">View All →</a>
+      </div>
+      
+      {recentUsers.length > 0 ? (
+        <div class="list">
+          {recentUsers.map(user => (
+            <div class="list-item">
+              <div class="user-avatar">
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.full_name} />
+                ) : (
+                  <span>{user.full_name?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || '?'}</span>
+                )}
+              </div>
+              <div class="list-content">
+                <div class="list-title">{user.full_name || 'No name'}</div>
+                <div class="list-subtitle">{user.email}</div>
+              </div>
+              <div class="list-meta">
+                <span class={`role-badge ${user.role || 'creator'}`}>{user.role || 'creator'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div class="empty-state">
+          <span>👥</span>
+          <p>No users yet</p>
+        </div>
+      )}
+    </div>
+    
+    <!-- Pending Reviews -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Pending Reviews</h2>
+        <a href="/admin/review" class="panel-action">Review All →</a>
+      </div>
+      
+      {pendingPosts.length > 0 ? (
+        <div class="list">
+          {pendingPosts.map(post => (
+            <div class="list-item">
+              <div class="list-icon">📄</div>
+              <div class="list-content">
+                <div class="list-title">{post.title || 'Untitled'}</div>
+                <div class="list-subtitle">
+                  By {post.profiles?.full_name || post.profiles?.email || 'Unknown'}
+                </div>
+              </div>
+              <div class="list-meta">
+                <span class="badge pending">Pending</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div class="empty-state">
+          <span>🎉</span>
+          <p>All caught up!</p>
+        </div>
+      )}
+    </div>
+  </div>
+  
+  <!-- Quick Actions -->
+  <div class="quick-actions">
+    <h3>Quick Actions</h3>
+    <div class="actions-grid">
+      <a href="/admin/users" class="action-card">
+        <span>👥</span>
+        <div>
+          <strong>Manage Users</strong>
+          <p>View and edit user accounts</p>
+        </div>
+      </a>
+      <a href="/admin/campaigns" class="action-card">
+        <span>📢</span>
+        <div>
+          <strong>Campaigns</strong>
+          <p>Manage active campaigns</p>
+        </div>
+      </a>
+      <a href="/admin/review" class="action-card">
+        <span>✅</span>
+        <div>
+          <strong>Review Queue</strong>
+          <p>Approve or reject content</p>
+        </div>
+      </a>
+      <a href="/admin/settings" class="action-card">
+        <span>⚙️</span>
+        <div>
+          <strong>Settings</strong>
+          <p>Configure your platform</p>
+        </div>
+      </a>
+    </div>
+  </div>
+  
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
-      min-height: 100vh;
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2rem;
     }
     
-    .admin-layout { display: flex; min-height: 100vh; }
-    
-    .sidebar {
-      width: 250px;
-      background: #1a1a2e;
-      color: white;
-      padding: 1.5rem;
-      position: fixed;
-      height: 100vh;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-    }
-    
-    .sidebar-logo { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
-    
-    .sidebar-user {
-      font-size: 0.75rem;
-      opacity: 0.7;
-      padding-bottom: 1.5rem;
-      margin-bottom: 1rem;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .master-key-badge {
-      display: inline-block;
-      background: #f59e0b;
-      color: #1a1a2e;
-      font-size: 0.625rem;
-      padding: 0.125rem 0.5rem;
-      border-radius: 4px;
-      font-weight: 600;
-      margin-top: 0.25rem;
-    }
-    
-    .sidebar-nav { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
-    
-    .sidebar-link {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.75rem 1rem;
-      color: rgba(255,255,255,0.7);
-      text-decoration: none;
-      border-radius: 8px;
-      transition: all 0.2s;
-    }
-    
-    .sidebar-link:hover, .sidebar-link.active { background: rgba(255,255,255,0.1); color: white; }
-    .sidebar-link.active { background: #2563eb; }
-    
-    .sidebar-section { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); }
-    .sidebar-section-title { font-size: 0.75rem; text-transform: uppercase; color: rgba(255,255,255,0.5); margin-bottom: 0.75rem; padding: 0 1rem; }
-    
-    .sidebar-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); }
-    
-    .logout-btn {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.75rem 1rem;
-      color: #fca5a5;
-      text-decoration: none;
-      border-radius: 8px;
-      width: 100%;
-      transition: all 0.2s;
-    }
-    
-    .logout-btn:hover { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
-    
-    .main-content { flex: 1; margin-left: 250px; padding: 2rem; }
-    
-    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-    .page-title { font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }
-    
-    .back-to-site {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
+    .stat-card {
       background: white;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      color: #666;
-      text-decoration: none;
-      font-size: 0.875rem;
-    }
-    
-    .back-to-site:hover { border-color: #2563eb; color: #2563eb; }
-    
-    .alert {
-      padding: 1rem;
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
       display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
     }
     
-    .alert-icon { font-size: 1.25rem; flex-shrink: 0; }
-    .alert-content { flex: 1; }
-    .alert-content strong { display: block; margin-bottom: 0.25rem; }
-    .alert-content p { font-size: 0.875rem; margin: 0; }
-    .alert-content ul { font-size: 0.875rem; margin: 0.5rem 0 0 1.25rem; }
-    .alert-content a { color: inherit; font-weight: 600; }
-    
-    .alert-warning {
-      background: #fef3c7;
-      border: 1px solid #fcd34d;
-      color: #92400e;
+    .stat-card.highlight {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border: 2px solid #f59e0b;
     }
     
-    .alert-error {
-      background: #fee2e2;
-      border: 1px solid #fecaca;
-      color: #991b1b;
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
     }
     
-    .alert-dismiss {
-      background: none;
-      border: none;
-      color: inherit;
-      cursor: pointer;
-      padding: 0.25rem;
-      opacity: 0.7;
-      transition: opacity 0.2s;
+    .stat-card.highlight .stat-icon {
+      background: #f59e0b;
     }
     
-    .alert-dismiss:hover { opacity: 1; }
+    .stat-content {
+      flex: 1;
+    }
     
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
     
-    .stat-card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-    .stat-card.error { opacity: 0.6; }
-    .stat-label { font-size: 0.875rem; color: #666; margin-bottom: 0.5rem; }
-    .stat-value { font-size: 2rem; font-weight: 700; color: #1a1a2e; }
-    .stat-card.highlight { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
-    .stat-card.highlight .stat-label, .stat-card.highlight .stat-value { color: white; }
+    .stat-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
     
-    .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .stat-link {
+      font-size: 0.8125rem;
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 500;
+    }
     
-    .panel { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow: hidden; }
-    .panel.error { opacity: 0.6; }
-    .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0; }
-    .panel-title { font-size: 1rem; font-weight: 600; color: #1a1a2e; }
-    .panel-link { font-size: 0.875rem; color: #2563eb; text-decoration: none; }
-    .panel-link:hover { text-decoration: underline; }
+    .stat-link:hover {
+      text-decoration: underline;
+    }
     
-    .user-list { padding: 0; }
-    .user-item { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0; }
-    .user-item:last-child { border-bottom: none; }
-    .user-info { display: flex; align-items: center; gap: 0.75rem; }
-    .user-avatar { width: 40px; height: 40px; border-radius: 50%; background: #dbeafe; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #2563eb; }
-    .user-name { font-weight: 500; }
-    .user-email { font-size: 0.75rem; color: #666; }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
     
-    .role-badge { font-size: 0.6875rem; padding: 0.25rem 0.75rem; border-radius: 999px; font-weight: 600; text-transform: uppercase; }
+    .panel {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      overflow: hidden;
+    }
+    
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    
+    .panel-action {
+      font-size: 0.8125rem;
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    
+    .panel-action:hover {
+      text-decoration: underline;
+    }
+    
+    .list {
+      padding: 0;
+    }
+    
+    .list-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .list-item:last-child {
+      border-bottom: none;
+    }
+    
+    .user-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #dbeafe 0%, #c7d2fe 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: #2563eb;
+      overflow: hidden;
+    }
+    
+    .user-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .list-icon {
+      width: 40px;
+      height: 40px;
+      background: #f3f4f6;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+    
+    .list-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .list-title {
+      font-weight: 600;
+      color: #1a1a2e;
+      font-size: 0.9375rem;
+    }
+    
+    .list-subtitle {
+      font-size: 0.8125rem;
+      color: #6b7280;
+    }
+    
+    .role-badge {
+      font-size: 0.6875rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
     .role-badge.admin { background: #fee2e2; color: #dc2626; }
-    .role-badge.manager { background: #dbeafe; color: #2563eb; }
     .role-badge.moderator { background: #fef3c7; color: #d97706; }
     .role-badge.creator { background: #d1fae5; color: #059669; }
     
-    .review-item { padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0; }
-    .review-item:last-child { border-bottom: none; }
-    .review-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem; }
-    .review-title { font-weight: 500; }
-    .review-meta { font-size: 0.75rem; color: #666; }
-    .status-badge { font-size: 0.6875rem; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; background: #fef3c7; color: #d97706; }
-    
-    .empty-state { padding: 2rem; text-align: center; color: #666; }
-    .error-state { padding: 2rem; text-align: center; color: #991b1b; background: #fee2e2; }
-    
-    .retry-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 1rem;
-      padding: 0.5rem 1rem;
-      background: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.875rem;
-      cursor: pointer;
-      transition: background 0.2s;
+    .badge {
+      font-size: 0.6875rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-weight: 600;
     }
     
-    .retry-btn:hover { background: #1d4ed8; }
+    .badge.pending { background: #fef3c7; color: #d97706; }
     
-    @media (max-width: 1024px) { .content-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 768px) { .sidebar { display: none; } .main-content { margin-left: 0; } }
+    .empty-state {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: #6b7280;
+    }
+    
+    .empty-state span {
+      font-size: 2.5rem;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    
+    .quick-actions h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 1rem;
+    }
+    
+    .actions-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+    
+    .action-card {
+      background: white;
+      padding: 1.25rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      transition: all 0.2s;
+    }
+    
+    .action-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .action-card span {
+      font-size: 1.5rem;
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .action-card strong {
+      display: block;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+    
+    .action-card p {
+      font-size: 0.8125rem;
+      color: #6b7280;
+      margin: 0;
+    }
+    
+    .alert {
+      padding: 1rem 1.5rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+    }
+    
+    .alert.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    
+    @media (max-width: 1024px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .actions-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .actions-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
-</head>
-<body>
-  <div class="admin-layout">
-    <aside class="sidebar">
-      <div class="sidebar-logo">🛡️ Admin</div>
-      <div class="sidebar-user">
-        {isMasterKeySession ? (
-          <>
-            Master Key Session
-            <div class="master-key-badge">⚡ ELEVATED ACCESS</div>
-          </>
-        ) : (
-          <>
-            {profile?.full_name || session?.user?.email || 'Admin'}
-            {profile?.role && <div style="margin-top: 0.25rem; opacity: 0.5;">{profile.role}</div>}
-          </>
-        )}
-      </div>
-      
-      <nav class="sidebar-nav">
-        <a href="/admin" class="sidebar-link active"><span>📊</span> Dashboard</a>
-        <a href="/admin/users" class="sidebar-link"><span>👥</span> Users</a>
-        <a href="/admin/campaigns" class="sidebar-link"><span>📢</span> Campaigns</a>
-        <a href="/admin/review" class="sidebar-link"><span>✅</span> Review Queue</a>
-        <a href="/admin/communities" class="sidebar-link"><span>💬</span> Communities</a>
-        
-        <div class="sidebar-section">
-          <div class="sidebar-section-title">Settings</div>
-          <a href="/admin/messages" class="sidebar-link"><span>📣</span> Server Messages</a>
-          <a href="/admin/settings" class="sidebar-link"><span>⚙️</span> Settings</a>
-        </div>
-      </nav>
-      
-      <div class="sidebar-footer">
-        <a href="/admin?logout=true" class="logout-btn"><span>🚪</span> Sign Out</a>
-      </div>
-    </aside>
-    
-    <main class="main-content">
-      <div class="page-header">
-        <h1 class="page-title">Dashboard</h1>
-        <a href="/" class="back-to-site">← Back to Site</a>
-      </div>
-      
-      {isMasterKeySession && (
-        <div class="alert alert-warning">
-          <span class="alert-icon">⚠️</span>
-          <div class="alert-content">
-            <strong>Master Key Session Active</strong>
-            <p>You're using elevated access. Consider creating a regular admin account via <a href="/admin/setup">Admin Setup</a>.</p>
-          </div>
-        </div>
-      )}
-      
-      {hasErrors && (
-        <div class="alert alert-error">
-          <span class="alert-icon">⚠️</span>
-          <div class="alert-content">
-            <strong>Some data failed to load</strong>
-            <ul>
-              {errors.map((err) => <li>{err}</li>)}
-            </ul>
-          </div>
-          <button class="alert-dismiss" onclick="location.reload()" title="Retry">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-        </div>
-      )}
-      
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Total Users</div>
-          <div class="stat-value">{stats.totalUsers}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Campaigns</div>
-          <div class="stat-value">{stats.totalCampaigns}</div>
-        </div>
-        <div class="stat-card highlight">
-          <div class="stat-label">Pending Reviews</div>
-          <div class="stat-value">{stats.pendingPosts}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Communities</div>
-          <div class="stat-value">{stats.totalCommunities}</div>
-        </div>
-      </div>
-      
-      <div class="content-grid">
-        <div class="panel">
-          <div class="panel-header">
-            <h2 class="panel-title">Recent Users</h2>
-            <a href="/admin/users" class="panel-link">View All →</a>
-          </div>
-          <div class="user-list">
-            {recentUsers.length > 0 ? (
-              recentUsers.map((user) => (
-                <div class="user-item">
-                  <div class="user-info">
-                    <div class="user-avatar">{user.full_name?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || '?'}</div>
-                    <div>
-                      <div class="user-name">{user.full_name || 'No name'}</div>
-                      <div class="user-email">{user.email || 'No email'}</div>
-                    </div>
-                  </div>
-                  <span class={`role-badge ${user.role || 'creator'}`}>{user.role || 'creator'}</span>
-                </div>
-              ))
-            ) : errors.includes('Unable to load recent users') ? (
-              <div class="error-state">
-                <p>Failed to load users</p>
-                <button class="retry-btn" onclick="location.reload()">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <div class="empty-state">No users yet</div>
-            )}
-          </div>
-        </div>
-        
-        <div class="panel">
-          <div class="panel-header">
-            <h2 class="panel-title">Pending Reviews</h2>
-            <a href="/admin/review" class="panel-link">View All →</a>
-          </div>
-          <div class="review-list">
-            {pendingReviews.length > 0 ? (
-              pendingReviews.map((post) => (
-                <div class="review-item">
-                  <div class="review-header">
-                    <div class="review-title">{post.title || 'Untitled Post'}</div>
-                    <span class="status-badge">Pending</span>
-                  </div>
-                  <div class="review-meta">by {post.profiles?.full_name || 'Unknown'} • {post.campaigns?.title || 'Unknown Campaign'}</div>
-                </div>
-              ))
-            ) : errors.includes('Unable to load pending reviews') ? (
-              <div class="error-state">
-                <p>Failed to load reviews</p>
-                <button class="retry-btn" onclick="location.reload()">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <div class="empty-state">No pending reviews 🎉</div>
-            )}
-          </div>
-        </div>
-      </div>
-    </main>
-  </div>
-</body>
-</html>
+</AdminLayout>
