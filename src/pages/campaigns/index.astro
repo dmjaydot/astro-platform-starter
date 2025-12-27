@@ -64,15 +64,23 @@ function getDaysRemaining(deadline: string) {
       <div class="campaigns-grid">
         {campaigns.map(campaign => {
           const daysRemaining = getDaysRemaining(campaign.deadline);
-          const isUrgent = daysRemaining !== null && daysRemaining <= Fragment 7 && daysRemaining >= 1;
-          const isExpired = daysRemaining !== null && daysRemaining < 1;
-          
+          const isUrgent =
+            daysRemaining !== null &&
+            daysRemaining <= 7 &&
+            daysRemaining >= 1;
+          const isExpired =
+            daysRemaining !== null &&
+            daysRemaining < 1;
+    
           return (
-            <div class={`campaign-card ${isUrgent ? 'urgent' : ''} ${isExpired ? 'expired' : ''}`}>
-              <div class="campaign-header">
-                <h2>{campaign.title}</h2>
-                <span class="status-badge active">Active</span>
-              </div>
+            <div class="campaign-card">
+              {/* render stuff */}
+            </div>
+          );
+        })}
+      </div>
+    ) : null}
+
               
               {campaign.description && (
                 <p class="campaign-desc">
