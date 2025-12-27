@@ -33,6 +33,7 @@ if (Astro.request.method === 'POST') {
     } else {
       const name = (form.get('name') as string)?.trim() || 'System';
       const email = (form.get('email') as string)?.trim() || 'system@banity.com';
+      const isAnnouncement = form.get('is_announcement') === 'on';
 
       const { error } = await supabase.from('messages').insert({
         name,
@@ -40,6 +41,7 @@ if (Astro.request.method === 'POST') {
         subject,
         body,
         is_read: false,
+        is_announcement: isAnnouncement,
       });
 
       if (error) {
@@ -53,6 +55,14 @@ if (Astro.request.method === 'POST') {
         return Astro.redirect('/admin/messages?created=true');
       }
     }
+  }
+
+  if (formAction === 'toggle_announcement') {
+    const messageId = form.get('messageId') as string;
+    const currentState = form.get('currentState') === 'true';
+    const { error } = await supabase.from('messages').update({ is_announcement: !currentState }).eq('id', messageId);
+    if (error) errorMessage = error.message;
+    else successMessage = !currentState ? 'Message now visible on homepage.' : 'Message removed from homepage.';
   }
 
   if (formAction === 'mark_read' || formAction === 'mark_unread') {
@@ -100,6 +110,7 @@ const filtered = allMessages.filter(m => {
   if (filter === 'all') return true;
   if (filter === 'unread') return !m.is_read;
   if (filter === 'read') return m.is_read;
+  if (filter === 'announcements') return m.is_announcement;
   return true;
 });
 
@@ -107,6 +118,7 @@ const stats = {
   total: allMessages.length,
   unread: allMessages.filter(m => !m.is_read).length,
   read: allMessages.filter(m => m.is_read).length,
+  announcements: allMessages.filter(m => m.is_announcement).length,
 };
 
 const selectedId = Astro.url.searchParams.get('id');
@@ -138,12 +150,16 @@ CREATE TABLE messages (
   subject TEXT NOT NULL,
   body TEXT NOT NULL,
   is_read BOOLEAN DEFAULT false,
+  is_announcement BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
+
+-- If table already exists, just add the column:
+-- ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_announcement BOOLEAN DEFAULT false;
       </pre>
     </div>
   ) : showForm ? (
@@ -176,6 +192,14 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
           <textarea name="body" rows="6" required placeholder="Write your message here..."></textarea>
         </div>
 
+        <div class="form-group">
+          <label class="toggle-label">
+            <input type="checkbox" name="is_announcement" />
+            <span class="toggle-text">📢 Show on Homepage</span>
+            <span class="toggle-hint">When enabled, this message will be displayed as an announcement banner on the public homepage.</span>
+          </label>
+        </div>
+
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Create Message</button>
           <a href="/admin/messages" class="btn btn-secondary">Cancel</a>
@@ -188,12 +212,14 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
         <div class="stat-card"><div class="stat-icon">📬</div><div><div class="stat-value">{stats.total}</div><div class="stat-label">Total</div></div></div>
         <div class={`stat-card ${stats.unread > 0 ? 'urgent' : ''}`}><div class="stat-icon">🔔</div><div><div class="stat-value">{stats.unread}</div><div class="stat-label">Unread</div></div></div>
         <div class="stat-card"><div class="stat-icon">✉️</div><div><div class="stat-value">{stats.read}</div><div class="stat-label">Read</div></div></div>
+        <div class="stat-card announcement"><div class="stat-icon">📢</div><div><div class="stat-value">{stats.announcements}</div><div class="stat-label">On Homepage</div></div></div>
       </div>
 
       <div class="toolbar">
         <div class="tabs">
           <a href="?filter=all" class:list={["tab", { active: filter === 'all' }]}>All ({stats.total})</a>
           <a href="?filter=unread" class:list={["tab", { active: filter === 'unread' }]}>Unread ({stats.unread})</a>
+          <a href="?filter=announcements" class:list={["tab", { active: filter === 'announcements' }]}>📢 Homepage ({stats.announcements})</a>
           <a href="?filter=read" class:list={["tab", { active: filter === 'read' }]}>Read</a>
         </div>
         <div class="toolbar-actions">
@@ -217,7 +243,7 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
                     <span class="message-sender">{m.name || m.email?.split('@')[0] || 'Unknown'}</span>
                     <span class="message-time">{new Date(m.created_at).toLocaleDateString()}</span>
                   </div>
-                  <div class="message-subject">{!m.is_read && <span class="dot"></span>}{m.subject || '(No subject)'}</div>
+                  <div class="message-subject">{!m.is_read && <span class="dot"></span>}{m.is_announcement && <span class="announcement-badge">📢</span>}{m.subject || '(No subject)'}</div>
                   <div class="message-snippet">{(m.body || '').substring(0, 60)}{(m.body || '').length > 60 ? '...' : ''}</div>
                 </div>
               </a>
@@ -231,8 +257,15 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
           {selected ? (
             <>
               <div class="detail-header">
-                <h2>{selected.subject || '(No subject)'}</h2>
+                <h2>{selected.is_announcement && <span class="announcement-badge-large">📢</span>}{selected.subject || '(No subject)'}</h2>
                 <div class="detail-actions">
+                  <form method="POST" class="inline">
+                    <input type="hidden" name="messageId" value={selected.id} />
+                    <input type="hidden" name="currentState" value={String(selected.is_announcement)} />
+                    <button name="action" value="toggle_announcement" class={`btn btn-sm ${selected.is_announcement ? 'btn-warning' : 'btn-secondary'}`}>
+                      {selected.is_announcement ? '📢 Remove from Homepage' : '📢 Show on Homepage'}
+                    </button>
+                  </form>
                   <form method="POST" class="inline">
                     <input type="hidden" name="messageId" value={selected.id} />
                     <button name="action" value={selected.is_read ? 'mark_unread' : 'mark_read'} class="btn btn-sm btn-secondary">
@@ -273,11 +306,13 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
   )}
 
   <style>
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
     .stat-card { background: white; padding: 1.25rem; border-radius: 12px; display: flex; align-items: center; gap: 1rem; }
     .stat-card.urgent { background: linear-gradient(135deg, #fee2e2, #fecaca); border: 2px solid #f87171; }
+    .stat-card.announcement { background: linear-gradient(135deg, #dbeafe, #bfdbfe); border: 2px solid #3b82f6; }
     .stat-icon { font-size: 1.5rem; width: 44px; height: 44px; background: #f3f4f6; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
     .stat-card.urgent .stat-icon { background: #ef4444; }
+    .stat-card.announcement .stat-icon { background: #3b82f6; }
     .stat-value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
     .stat-label { font-size: 0.8125rem; color: #6b7280; }
     
@@ -301,6 +336,8 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
     .message-time { font-size: 0.6875rem; color: #9ca3af; }
     .message-subject { font-size: 0.8125rem; color: #374151; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
     .dot { width: 8px; height: 8px; background: #2563eb; border-radius: 50%; flex-shrink: 0; }
+    .announcement-badge { font-size: 0.75rem; flex-shrink: 0; }
+    .announcement-badge-large { font-size: 1rem; margin-right: 0.5rem; }
     .message-snippet { font-size: 0.75rem; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .empty-list { text-align: center; padding: 3rem; color: #9ca3af; }
     .empty-list span { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
@@ -329,12 +366,18 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
     .form-group label { font-weight: 600; font-size: 0.875rem; color: #374151; }
     .form-group input, .form-group textarea { padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; }
     .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #2563eb; }
+    .form-group .toggle-label { display: flex; flex-direction: column; gap: 0.25rem; cursor: pointer; background: #f9fafb; padding: 1rem; border-radius: 8px; border: 2px solid #e5e7eb; }
+    .form-group .toggle-label:has(input:checked) { background: #dbeafe; border-color: #3b82f6; }
+    .form-group .toggle-label input { width: auto; margin-right: 0.5rem; }
+    .form-group .toggle-text { display: flex; align-items: center; font-weight: 600; }
+    .form-group .toggle-hint { font-size: 0.75rem; color: #6b7280; font-weight: 400; margin-left: 1.5rem; }
     .form-actions { display: flex; gap: 1rem; margin-top: 0.5rem; }
     
     .btn { padding: 0.625rem 1.25rem; border-radius: 8px; font-weight: 600; text-decoration: none; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
     .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
     .btn-primary { background: #2563eb; color: white; }
     .btn-secondary { background: #f3f4f6; color: #374151; }
+    .btn-warning { background: #f59e0b; color: white; }
     .btn-danger { background: #dc2626; color: white; }
     .inline { display: inline; }
     
@@ -350,7 +393,7 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
     .code-block { background: #1a1a2e; color: #10b981; padding: 1rem; border-radius: 8px; text-align: left; font-size: 0.75rem; overflow-x: auto; white-space: pre; }
     
     @media (max-width: 1024px) {
-      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .inbox-layout { grid-template-columns: 1fr; }
       .message-list { max-height: 300px; }
     }
@@ -359,6 +402,7 @@ CREATE POLICY "Allow all for service role" ON messages FOR ALL USING (true);
       .form-row { grid-template-columns: 1fr; }
       .toolbar { flex-direction: column; align-items: stretch; }
       .detail-header { flex-direction: column; }
+      .detail-actions { flex-wrap: wrap; }
     }
   </style>
 </AdminLayout>
