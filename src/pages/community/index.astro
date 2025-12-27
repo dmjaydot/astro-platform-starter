@@ -1,400 +1,325 @@
 ---
-// src/pages/community/index.astro
+// src/pages/communities/index.astro
 export const prerender = false;
 
-import Layout from '../../layouts/Layout.astro';
-import { supabase } from '../../lib/supabase';
+import Layout from "../../layouts/Layout.astro";
+import { supabase } from "../../lib/supabase";
 
-// --------------------------------------------------
-// Auth & role data (from middleware)
-// --------------------------------------------------
 const session = Astro.locals.session;
 const profile = Astro.locals.profile;
-const isAdmin = Astro.locals.isAdmin;
-const isModerator = Astro.locals.isModerator;
 
-// Safety fallback (middleware should already enforce this)
-if (!session) {
-  // If you want this page public, you can skip redirect
-  // For now, just keep session null
-}
+const isApproved = profile?.status === 'active' && profile?.is_active;
 
-let userProfile = profile || null;
-
-// Get communities the user has joined
-let userCommunities: string[] = [];
-if (session) {
-  const { data: memberships } = await supabase
-    .from('community_members')
-    .select('community_id')
-    .eq('user_id', session.user.id);
-
-  userCommunities = memberships?.map(m => m.community_id) || [];
-}
-
-
-// Handle join/leave
-let message = '';
-if (Astro.request.method === 'POST' && session) {
-  const form = await Astro.request.formData();
-  const communityId = form.get('communityId') as string;
-  const action = form.get('action') as string;
-  
-  if (action === 'join') {
-    const { error } = await supabase.from('community_members').insert({
-      community_id: communityId,
-      user_id: session.user.id
-    });
-    if (!error) {
-      userCommunities.push(communityId);
-      message = 'Joined community!';
-    }
-  } else if (action === 'leave') {
-    await supabase.from('community_members')
-      .delete()
-      .eq('community_id', communityId)
-      .eq('user_id', session.user.id);
-    userCommunities = userCommunities.filter(id => id !== communityId);
-    message = 'Left community';
-  }
-}
-
-// Fetch public communities
+// Fetch communities
 const { data: communities } = await supabase
   .from('communities')
-  .select(`
-    *,
-    profiles!manager_id(full_name),
-    campaigns(title)
-  `)
-  .eq('visibility', 'public')
+  .select('id, name, slug, description, member_count, is_private')
   .order('member_count', { ascending: false });
 ---
 
-<Layout title="Community">
-  <style>
-    .page-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 2rem;
-    }
-    
-    .page-title {
-      font-family: var(--font-serif);
-      font-size: 2.5rem;
-      font-weight: 700;
-    }
-    
-    .page-subtitle {
-      color: var(--color-muted);
-      margin-top: 0.5rem;
-    }
-    
-    .alert {
-      padding: 1rem;
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
-      background: #d1fae5;
-      color: #065f46;
-    }
-    
-    .section-title {
-      font-family: var(--font-serif);
-      font-size: 1.5rem;
-      font-weight: 600;
-      margin-bottom: 1.5rem;
-    }
-    
-    .communities-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 3rem;
-    }
-    
-    .community-card {
-      background: white;
-      border-radius: 12px;
-      border: 1px solid var(--color-border);
-      overflow: hidden;
-      transition: all 0.3s;
-    }
-    
-    .community-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 12px 24px rgba(0,0,0,0.08);
-    }
-    
-    .community-cover {
-      width: 100%;
-      height: 120px;
-      object-fit: cover;
-      background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
-    }
-    
-    .community-body {
-      padding: 1.25rem;
-    }
-    
-    .community-name {
-      font-family: var(--font-serif);
-      font-size: 1.25rem;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-    }
-    
-    .community-name a {
-      color: var(--color-ink);
-      text-decoration: none;
-    }
-    
-    .community-name a:hover {
-      color: var(--color-accent);
-    }
-    
-    .community-description {
-      color: var(--color-muted);
-      font-size: 0.9375rem;
-      line-height: 1.6;
-      margin-bottom: 1rem;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    
-    .community-meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    
-    .member-count {
-      font-size: 0.875rem;
-      color: var(--color-muted);
-    }
-    
-    .campaign-tag {
-      font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
-      background: var(--color-accent-light);
-      color: var(--color-accent);
-      border-radius: 4px;
-    }
-    
-    .community-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 1.25rem;
-      background: #fafafa;
-      border-top: 1px solid var(--color-border);
-    }
-    
-    .manager-info {
-      font-size: 0.875rem;
-      color: var(--color-muted);
-    }
-    
-    .join-btn,
-    .leave-btn,
-    .view-btn {
-      padding: 0.5rem 1rem;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.875rem;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.2s;
-    }
-    
-    .join-btn {
-      background: var(--color-accent);
-      color: white;
-    }
-    
-    .join-btn:hover {
-      background: #1d4ed8;
-    }
-    
-    .leave-btn {
-      background: #f3f4f6;
-      color: #6b7280;
-    }
-    
-    .leave-btn:hover {
-      background: #e5e7eb;
-    }
-    
-    .view-btn {
-      background: var(--color-ink);
-      color: white;
-    }
-    
-    .view-btn:hover {
-      background: #333;
-    }
-    
-    .joined-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      font-size: 0.75rem;
-      color: var(--color-success);
-      font-weight: 600;
-    }
-    
-    .login-prompt {
-      text-align: center;
-      padding: 3rem 2rem;
-      background: white;
-      border-radius: 12px;
-      border: 1px solid var(--color-border);
-      margin-bottom: 2rem;
-    }
-    
-    .login-prompt p {
-      color: var(--color-muted);
-      margin-bottom: 1rem;
-    }
-    
-    .login-link {
-      color: var(--color-accent);
-      font-weight: 600;
-    }
-    
-    .empty-state {
-      text-align: center;
-      padding: 4rem 2rem;
-      background: white;
-      border-radius: 12px;
-      border: 1px solid var(--color-border);
-    }
-    
-    .empty-state-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-    }
-    
-    .empty-state-title {
-      font-family: var(--font-serif);
-      font-size: 1.5rem;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-    }
-    
-    .empty-state-text {
-      color: var(--color-muted);
-    }
-    
-    @media (max-width: 768px) {
-      .communities-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+<Layout title="Communities">
+  <div class="communities-page">
+    <div class="page-header">
+      <div class="header-content">
+        <h1>Creator Communities</h1>
+        <p>Connect, share, and grow with fellow creators</p>
+      </div>
+      {!session && (
+        <a href="/signup" class="btn btn-primary">Join to Participate</a>
+      )}
+    </div>
 
-  <div class="page-header">
-    <div>
-      <h1 class="page-title">Community</h1>
-      <p class="page-subtitle">Connect with other creators and campaign participants</p>
-    </div>
-  </div>
-  
-  {message && <div class="alert">{message}</div>}
-  
-  {!session && (
-    <div class="login-prompt">
-      <p>Join communities to connect with other creators and participate in discussions</p>
-      <a href="/clips" class="login-link">Sign up to get started →</a>
-    </div>
-  )}
-  
-  {userCommunities.length > 0 && (
-    <>
-      <h2 class="section-title">Your Communities</h2>
+    {!session && (
+      <div class="login-banner">
+        <div class="banner-icon">🔐</div>
+        <div class="banner-content">
+          <h3>Join Our Creator Community</h3>
+          <p>Create an account to join communities, post content, and connect with other creators.</p>
+        </div>
+        <div class="banner-actions">
+          <a href="/signup" class="btn btn-primary">Sign Up</a>
+          <a href="/login" class="btn btn-secondary">Log In</a>
+        </div>
+      </div>
+    )}
+
+    {session && !isApproved && (
+      <div class="pending-banner">
+        <div class="banner-icon">⏳</div>
+        <div class="banner-content">
+          <h3>Account Pending Approval</h3>
+          <p>You can browse communities, but you'll need an approved account to join and participate.</p>
+        </div>
+      </div>
+    )}
+
+    {communities && communities.length > 0 ? (
       <div class="communities-grid">
-        {communities?.filter(c => userCommunities.includes(c.id)).map((community) => (
+        {communities.map(community => (
           <div class="community-card">
-            {community.cover_image_url ? (
-              <img src={community.cover_image_url} alt={community.name} class="community-cover" />
-            ) : (
-              <div class="community-cover"></div>
-            )}
-            
-            <div class="community-body">
-              <h3 class="community-name">
-                <a href={`/community/${community.slug || community.id}`}>{community.name}</a>
-              </h3>
-              <p class="community-description">
-                {community.description || 'No description'}
-              </p>
-              <div class="community-meta">
-                <span class="member-count">{community.member_count} members</span>
-                <span class="joined-badge">✓ Joined</span>
+            <div class="community-header">
+              <div class="community-icon">
+                {community.is_private ? '🔒' : '💬'}
+              </div>
+              <div class="community-info">
+                <h2>{community.name}</h2>
+                <span class="member-count">{community.member_count || 0} members</span>
               </div>
             </div>
             
+            {community.description && (
+              <p class="community-desc">{community.description}</p>
+            )}
+            
             <div class="community-footer">
-              <span class="manager-info">by {community.profiles?.full_name || 'Manager'}</span>
-              <a href={`/community/${community.slug || community.id}`} class="view-btn">View</a>
+              {isApproved ? (
+                <a href={`/community/${community.slug}`} class="btn btn-primary">
+                  View Community
+                </a>
+              ) : session ? (
+                <button class="btn btn-disabled" disabled>
+                  Account Pending
+                </button>
+              ) : (
+                <a href="/signup" class="btn btn-secondary">
+                  Sign Up to Join
+                </a>
+              )}
+              
+              {community.is_private && (
+                <span class="private-badge">Private</span>
+              )}
             </div>
           </div>
         ))}
       </div>
-    </>
-  )}
-  
-  <h2 class="section-title">Discover Communities</h2>
-  
-  {communities && communities.filter(c => !userCommunities.includes(c.id)).length > 0 ? (
-    <div class="communities-grid">
-      {communities.filter(c => !userCommunities.includes(c.id)).map((community) => (
-        <div class="community-card">
-          {community.cover_image_url ? (
-            <img src={community.cover_image_url} alt={community.name} class="community-cover" />
-          ) : (
-            <div class="community-cover"></div>
-          )}
-          
-          <div class="community-body">
-            <h3 class="community-name">
-              <a href={`/community/${community.slug || community.id}`}>{community.name}</a>
-            </h3>
-            <p class="community-description">
-              {community.description || 'No description'}
-            </p>
-            <div class="community-meta">
-              <span class="member-count">{community.member_count} members</span>
-              {community.campaigns && (
-                <span class="campaign-tag">{community.campaigns.title}</span>
-              )}
-            </div>
-          </div>
-          
-          <div class="community-footer">
-            <span class="manager-info">by {community.profiles?.full_name || 'Manager'}</span>
-            {session ? (
-              <form method="POST" style="display: inline;">
-                <input type="hidden" name="communityId" value={community.id} />
-                <button type="submit" name="action" value="join" class="join-btn">
-                  Join
-                </button>
-              </form>
-            ) : (
-              <a href="/clips" class="join-btn">Join</a>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  ) : (
-    <div class="empty-state">
-      <div class="empty-state-icon">💬</div>
-      <h2 class="empty-state-title">No Communities Yet</h2>
-      <p class="empty-state-text">Communities will appear here as campaigns launch.</p>
-    </div>
-  )}
+    ) : (
+      <div class="empty-state">
+        <div class="empty-icon">💬</div>
+        <h2>No Communities Yet</h2>
+        <p>Communities will appear here once they're created.</p>
+      </div>
+    )}
+  </div>
+
+  <style>
+    .communities-page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 2rem;
+    }
+
+    .header-content h1 {
+      font-size: 2rem;
+      color: #1a1a2e;
+      margin-bottom: 0.5rem;
+    }
+
+    .header-content p {
+      color: #6b7280;
+      font-size: 1.125rem;
+    }
+
+    .login-banner, .pending-banner {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 1.5rem;
+      border-radius: 16px;
+      margin-bottom: 2rem;
+    }
+
+    .login-banner {
+      background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+      border: 2px solid #3b82f6;
+    }
+
+    .pending-banner {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border: 2px solid #f59e0b;
+    }
+
+    .banner-icon {
+      font-size: 2.5rem;
+    }
+
+    .banner-content {
+      flex: 1;
+    }
+
+    .banner-content h3 {
+      font-size: 1.125rem;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+
+    .banner-content p {
+      color: #6b7280;
+      margin: 0;
+    }
+
+    .banner-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .communities-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .community-card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      transition: all 0.2s;
+    }
+
+    .community-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+    }
+
+    .community-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .community-icon {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, #dbeafe 0%, #c7d2fe 100%);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.75rem;
+    }
+
+    .community-info h2 {
+      font-size: 1.125rem;
+      color: #1a1a2e;
+      margin-bottom: 0.25rem;
+    }
+
+    .member-count {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+
+    .community-desc {
+      color: #6b7280;
+      font-size: 0.9375rem;
+      margin-bottom: 1.25rem;
+      line-height: 1.5;
+    }
+
+    .community-footer {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #f0f0f0;
+    }
+
+    .private-badge {
+      font-size: 0.6875rem;
+      padding: 0.25rem 0.75rem;
+      background: #fef3c7;
+      color: #92400e;
+      border-radius: 999px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.9375rem;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+
+    .btn-disabled {
+      background: #e5e7eb;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+    }
+
+    .empty-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+
+    .empty-state h2 {
+      color: #374151;
+      margin-bottom: 0.5rem;
+    }
+
+    .empty-state p {
+      color: #9ca3af;
+    }
+
+    @media (max-width: 768px) {
+      .page-header {
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .login-banner, .pending-banner {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .banner-actions {
+        flex-direction: column;
+        width: 100%;
+      }
+
+      .banner-actions .btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
 </Layout>
