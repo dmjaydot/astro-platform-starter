@@ -29,12 +29,49 @@ try {
   // Use defaults
 }
 
+// Load announcements (messages marked as is_announcement)
+let announcements: any[] = [];
+try {
+  const { data } = await supabase
+    .from('messages')
+    .select('id, subject, body, created_at')
+    .eq('is_announcement', true)
+    .order('created_at', { ascending: false })
+    .limit(5);
+  if (data) announcements = data;
+} catch (e) {
+  // Table might not exist yet
+}
+
 // Get some stats
 const { count: creatorCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'creator');
 const { count: campaignCount } = await supabase.from('campaigns').select('*', { count: 'exact', head: true }).eq('status', 'active');
 ---
 
 <Layout>
+  {announcements.length > 0 && (
+    <div class="announcements-bar">
+      <div class="announcements-container">
+        {announcements.map((a, i) => (
+          <div class="announcement" data-index={i} style={i > 0 ? 'display: none;' : ''}>
+            <span class="announcement-icon">📢</span>
+            <div class="announcement-content">
+              <strong>{a.subject}</strong>
+              {a.body && <span class="announcement-body">{a.body.substring(0, 100)}{a.body.length > 100 ? '...' : ''}</span>}
+            </div>
+          </div>
+        ))}
+        {announcements.length > 1 && (
+          <div class="announcement-nav">
+            <button class="nav-btn prev" aria-label="Previous">‹</button>
+            <span class="announcement-count"><span class="current">1</span> / {announcements.length}</span>
+            <button class="nav-btn next" aria-label="Next">›</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )}
+
   <section class="hero" style={`--primary: ${appearance.primaryColor}; --accent: ${appearance.accentColor};`}>
     <div class="hero-content">
       <h1>{general.tagline}</h1>
@@ -252,4 +289,140 @@ const { count: campaignCount } = await supabase.from('campaigns').select('*', { 
     .stats-container { grid-template-columns: 1fr; }
     .features-grid { grid-template-columns: 1fr; }
   }
+  
+  /* Announcements Bar */
+  .announcements-bar {
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+    color: white;
+    padding: 0.75rem 1rem;
+  }
+  
+  .announcements-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    position: relative;
+  }
+  
+  .announcement {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: center;
+    flex: 1;
+    justify-content: center;
+  }
+  
+  .announcement-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+  
+  .announcement-content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  
+  .announcement-content strong {
+    font-weight: 600;
+  }
+  
+  .announcement-body {
+    opacity: 0.9;
+    font-size: 0.9375rem;
+  }
+  
+  .announcement-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  
+  .nav-btn {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+  
+  .nav-btn:hover {
+    background: rgba(255,255,255,0.3);
+  }
+  
+  .announcement-count {
+    font-size: 0.8125rem;
+    opacity: 0.9;
+    min-width: 40px;
+    text-align: center;
+  }
+  
+  @media (max-width: 768px) {
+    .announcements-container {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .announcement-content {
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    
+    .announcement-body {
+      font-size: 0.8125rem;
+    }
+  }
 </style>
+
+{announcements.length > 1 && (
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const announcements = document.querySelectorAll('.announcement');
+      const currentSpan = document.querySelector('.announcement-count .current');
+      const prevBtn = document.querySelector('.nav-btn.prev');
+      const nextBtn = document.querySelector('.nav-btn.next');
+      
+      if (!announcements.length || !prevBtn || !nextBtn) return;
+      
+      let current = 0;
+      const total = announcements.length;
+      
+      function show(index: number) {
+        announcements.forEach((a, i) => {
+          (a as HTMLElement).style.display = i === index ? 'flex' : 'none';
+        });
+        if (currentSpan) currentSpan.textContent = String(index + 1);
+      }
+      
+      prevBtn.addEventListener('click', () => {
+        current = (current - 1 + total) % total;
+        show(current);
+      });
+      
+      nextBtn.addEventListener('click', () => {
+        current = (current + 1) % total;
+        show(current);
+      });
+      
+      // Auto-rotate every 8 seconds
+      setInterval(() => {
+        current = (current + 1) % total;
+        show(current);
+      }, 8000);
+    });
+  </script>
+)}
