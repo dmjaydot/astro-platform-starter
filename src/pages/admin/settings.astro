@@ -4,1177 +4,222 @@ export const prerender = false;
 
 import AdminLayout from "../../layouts/AdminLayout.astro";
 import { supabase } from "../../lib/supabase";
-import { getAllSettings, updateSetting, defaultSettings } from "../../lib/settings";
-import type { AllSettings } from "../../lib/settings";
 
-// Auth from middleware
+// Auth check
 const isMasterKeySession = Astro.locals.isMasterKeySession || false;
 const session = Astro.locals.session;
-const isAdmin = Astro.locals.isAdmin;
 
 if (!isMasterKeySession && !session) {
   return Astro.redirect('/admin/login');
 }
 
-// Only full admins can access settings
-if (!isMasterKeySession && !isAdmin) {
-  return Astro.redirect('/unauthorized');
-}
+// Defaults
+const defaults = {
+  general: {
+    siteName: 'Banity',
+    tagline: 'Create Authentic Content. Get Paid.',
+    description: 'Banity connects creators with brands for authentic UGC campaigns.',
+    supportEmail: 'support@banity.com',
+    contactEmail: 'hello@banity.com',
+    timezone: 'America/Los_Angeles',
+  },
+  appearance: {
+    primaryColor: '#2563eb',
+    accentColor: '#059669',
+    logoUrl: '',
+    faviconUrl: '',
+  },
+  security: {
+    requireEmailVerify: true,
+    enableMfa: false,
+    enableSignup: true,
+    maintenanceMode: false,
+  },
+};
 
 let successMessage = '';
 let errorMessage = '';
 
-// Handle settings updates
+// Handle POST
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   const action = form.get('action') as string;
-  const userId = session?.user?.id;
 
   if (action === 'update_general') {
-    const result = await updateSetting('general', {
-      siteName: form.get('siteName') as string || defaultSettings.general.siteName,
-      tagline: form.get('tagline') as string || defaultSettings.general.tagline,
-      description: form.get('description') as string || defaultSettings.general.description,
-      supportEmail: form.get('supportEmail') as string || defaultSettings.general.supportEmail,
-      contactEmail: form.get('contactEmail') as string || defaultSettings.general.contactEmail,
-      timezone: form.get('timezone') as string || defaultSettings.general.timezone,
-    }, userId);
-    
-    if (result.success) successMessage = 'General settings saved successfully.';
-    else errorMessage = result.error || 'Failed to save general settings.';
+    const value = {
+      siteName: form.get('siteName') || defaults.general.siteName,
+      tagline: form.get('tagline') || defaults.general.tagline,
+      description: form.get('description') || defaults.general.description,
+      supportEmail: form.get('supportEmail') || defaults.general.supportEmail,
+      contactEmail: form.get('contactEmail') || defaults.general.contactEmail,
+      timezone: form.get('timezone') || defaults.general.timezone,
+    };
+
+    const { error } = await supabase
+      .from('site_settings')
+      .upsert({ key: 'general', value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+
+    if (error) errorMessage = error.message;
+    else successMessage = 'General settings saved!';
   }
 
   if (action === 'update_appearance') {
-    const result = await updateSetting('appearance', {
-      primaryColor: form.get('primaryColor') as string || defaultSettings.appearance.primaryColor,
-      accentColor: form.get('accentColor') as string || defaultSettings.appearance.accentColor,
-      logoUrl: form.get('logoUrl') as string || '',
-      faviconUrl: form.get('faviconUrl') as string || '',
-    }, userId);
-    
-    if (result.success) successMessage = 'Appearance settings saved successfully.';
-    else errorMessage = result.error || 'Failed to save appearance settings.';
-  }
+    const value = {
+      primaryColor: form.get('primaryColor') || defaults.appearance.primaryColor,
+      accentColor: form.get('accentColor') || defaults.appearance.accentColor,
+      logoUrl: form.get('logoUrl') || '',
+      faviconUrl: form.get('faviconUrl') || '',
+    };
 
-  if (action === 'update_email') {
-    const result = await updateSetting('email', {
-      provider: form.get('emailProvider') as string || 'supabase',
-      fromName: form.get('fromName') as string || 'Banity',
-      fromEmail: form.get('fromEmail') as string || 'noreply@banity.com',
-      enableWelcome: form.get('emailWelcome') === 'on',
-      enableCampaignNotify: form.get('emailCampaign') === 'on',
-      enableReviewNotify: form.get('emailReview') === 'on',
-      enablePaymentNotify: form.get('emailPayment') === 'on',
-    }, userId);
-    
-    if (result.success) successMessage = 'Email settings saved successfully.';
-    else errorMessage = result.error || 'Failed to save email settings.';
-  }
+    const { error } = await supabase
+      .from('site_settings')
+      .upsert({ key: 'appearance', value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
 
-  if (action === 'update_payments') {
-    const result = await updateSetting('payments', {
-      processor: form.get('paymentProcessor') as string || 'stripe',
-      platformFee: parseInt(form.get('platformFee') as string) || 15,
-      minPayout: parseInt(form.get('minPayout') as string) || 50,
-      payoutSchedule: form.get('payoutSchedule') as string || 'biweekly',
-      currency: form.get('currency') as string || 'USD',
-    }, userId);
-    
-    if (result.success) successMessage = 'Payment settings saved successfully.';
-    else errorMessage = result.error || 'Failed to save payment settings.';
+    if (error) errorMessage = error.message;
+    else successMessage = 'Appearance settings saved!';
   }
 
   if (action === 'update_security') {
-    const result = await updateSetting('security', {
+    const value = {
       requireEmailVerify: form.get('requireEmailVerify') === 'on',
       enableMfa: form.get('enableMfa') === 'on',
       enableSignup: form.get('enableSignup') === 'on',
       maintenanceMode: form.get('maintenanceMode') === 'on',
-    }, userId);
-    
-    if (result.success) successMessage = 'Security settings saved successfully.';
-    else errorMessage = result.error || 'Failed to save security settings.';
-  }
+    };
 
-  if (action === 'clear_cache') {
-    // Clear any application caches here
-    successMessage = 'Cache cleared successfully.';
+    const { error } = await supabase
+      .from('site_settings')
+      .upsert({ key: 'security', value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+
+    if (error) errorMessage = error.message;
+    else successMessage = 'Security settings saved!';
   }
 }
 
-// Load current settings
-let settings: AllSettings;
-try {
-  settings = await getAllSettings();
-} catch (e) {
-  settings = defaultSettings;
-  errorMessage = 'Could not load settings from database. Using defaults.';
+// Load settings
+const { data: rows, error: loadError } = await supabase.from('site_settings').select('*');
+
+const settings: any = { general: { ...defaults.general }, appearance: { ...defaults.appearance }, security: { ...defaults.security } };
+if (rows) {
+  for (const row of rows) {
+    if (settings[row.key]) {
+      settings[row.key] = { ...settings[row.key], ...row.value };
+    }
+  }
 }
 
-// Get some stats for the system info section
-const { count: userCount } = await supabase
-  .from('profiles')
-  .select('*', { count: 'exact', head: true });
-
-const { count: campaignCount } = await supabase
-  .from('campaigns')
-  .select('*', { count: 'exact', head: true });
-
-const { count: postCount } = await supabase
-  .from('posts')
-  .select('*', { count: 'exact', head: true });
-
-// Get active section from URL
-const activeSection = Astro.url.searchParams.get('section') || 'general';
+const section = Astro.url.searchParams.get('section') || 'general';
 ---
 
 <AdminLayout title="Settings">
   {successMessage && <div class="alert success">{successMessage}</div>}
   {errorMessage && <div class="alert error">{errorMessage}</div>}
-  
-  <div class="settings-layout">
-    <!-- Sidebar Navigation -->
-    <div class="settings-nav">
-      <a href="/admin/settings?section=general" class:list={["nav-item", { active: activeSection === 'general' }]}>
-        <span class="nav-icon">⚙️</span>
-        <span class="nav-text">General</span>
-      </a>
-      <a href="/admin/settings?section=appearance" class:list={["nav-item", { active: activeSection === 'appearance' }]}>
-        <span class="nav-icon">🎨</span>
-        <span class="nav-text">Appearance</span>
-      </a>
-      <a href="/admin/settings?section=email" class:list={["nav-item", { active: activeSection === 'email' }]}>
-        <span class="nav-icon">📧</span>
-        <span class="nav-text">Email</span>
-      </a>
-      <a href="/admin/settings?section=payments" class:list={["nav-item", { active: activeSection === 'payments' }]}>
-        <span class="nav-icon">💳</span>
-        <span class="nav-text">Payments</span>
-      </a>
-      <a href="/admin/settings?section=security" class:list={["nav-item", { active: activeSection === 'security' }]}>
-        <span class="nav-icon">🔒</span>
-        <span class="nav-text">Security</span>
-      </a>
-      <a href="/admin/settings?section=system" class:list={["nav-item", { active: activeSection === 'system' }]}>
-        <span class="nav-icon">🖥️</span>
-        <span class="nav-text">System</span>
-      </a>
-    </div>
-    
-    <!-- Settings Content -->
-    <div class="settings-content">
-      <!-- General Settings -->
-      {activeSection === 'general' && (
-        <section class="settings-section">
-          <div class="section-header">
-            <h2 class="section-title">General Settings</h2>
-            <p class="section-description">Basic site configuration and preferences</p>
-          </div>
-          
-          <form method="POST" class="settings-form">
+  {loadError && <div class="alert error">Load error: {loadError.message}</div>}
+
+  <div class="layout">
+    <nav class="nav">
+      <a href="?section=general" class:list={["nav-link", { active: section === 'general' }]}>⚙️ General</a>
+      <a href="?section=appearance" class:list={["nav-link", { active: section === 'appearance' }]}>🎨 Appearance</a>
+      <a href="?section=security" class:list={["nav-link", { active: section === 'security' }]}>🔒 Security</a>
+      <a href="?section=debug" class:list={["nav-link", { active: section === 'debug' }]}>🐛 Debug</a>
+    </nav>
+
+    <main class="main">
+      {section === 'general' && (
+        <div class="card">
+          <h2>General Settings</h2>
+          <form method="POST">
             <input type="hidden" name="action" value="update_general" />
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Site Name</label>
-                <input type="text" name="siteName" class="form-input" value={settings.general.siteName} />
-                <p class="form-hint">The name displayed throughout the platform</p>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">Tagline</label>
-                <input type="text" name="tagline" class="form-input" value={settings.general.tagline} />
-                <p class="form-hint">Short description for SEO and marketing</p>
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">Site Description</label>
-              <textarea name="description" class="form-input" rows="3">{settings.general.description}</textarea>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Support Email</label>
-                <input type="email" name="supportEmail" class="form-input" value={settings.general.supportEmail} />
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">Contact Email</label>
-                <input type="email" name="contactEmail" class="form-input" value={settings.general.contactEmail} />
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">Timezone</label>
-              <select name="timezone" class="form-input">
-                <option value="America/New_York" selected={settings.general.timezone === 'America/New_York'}>Eastern Time (ET)</option>
-                <option value="America/Chicago" selected={settings.general.timezone === 'America/Chicago'}>Central Time (CT)</option>
-                <option value="America/Denver" selected={settings.general.timezone === 'America/Denver'}>Mountain Time (MT)</option>
-                <option value="America/Los_Angeles" selected={settings.general.timezone === 'America/Los_Angeles'}>Pacific Time (PT)</option>
+            <label>Site Name<input type="text" name="siteName" value={settings.general.siteName} /></label>
+            <label>Tagline<input type="text" name="tagline" value={settings.general.tagline} /></label>
+            <label>Description<textarea name="description" rows="3">{settings.general.description}</textarea></label>
+            <label>Support Email<input type="email" name="supportEmail" value={settings.general.supportEmail} /></label>
+            <label>Contact Email<input type="email" name="contactEmail" value={settings.general.contactEmail} /></label>
+            <label>Timezone
+              <select name="timezone">
+                <option value="America/New_York" selected={settings.general.timezone === 'America/New_York'}>Eastern</option>
+                <option value="America/Chicago" selected={settings.general.timezone === 'America/Chicago'}>Central</option>
+                <option value="America/Los_Angeles" selected={settings.general.timezone === 'America/Los_Angeles'}>Pacific</option>
                 <option value="UTC" selected={settings.general.timezone === 'UTC'}>UTC</option>
-                <option value="Europe/London" selected={settings.general.timezone === 'Europe/London'}>London (GMT)</option>
-                <option value="Europe/Paris" selected={settings.general.timezone === 'Europe/Paris'}>Paris (CET)</option>
-                <option value="Asia/Tokyo" selected={settings.general.timezone === 'Asia/Tokyo'}>Tokyo (JST)</option>
               </select>
-            </div>
-            
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Save General Settings</button>
-            </div>
+            </label>
+            <button type="submit">Save General Settings</button>
           </form>
-        </section>
+        </div>
       )}
-      
-      <!-- Appearance Settings -->
-      {activeSection === 'appearance' && (
-        <section class="settings-section">
-          <div class="section-header">
-            <h2 class="section-title">Appearance</h2>
-            <p class="section-description">Customize the look and feel of your platform</p>
-          </div>
-          
-          <form method="POST" class="settings-form">
+
+      {section === 'appearance' && (
+        <div class="card">
+          <h2>Appearance</h2>
+          <form method="POST">
             <input type="hidden" name="action" value="update_appearance" />
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Primary Color</label>
-                <div class="color-input-wrapper">
-                  <input type="color" name="primaryColor" value={settings.appearance.primaryColor} class="color-input" id="primaryColorPicker" />
-                  <input type="text" value={settings.appearance.primaryColor} class="form-input color-text" id="primaryColorText" />
-                </div>
-                <p class="form-hint">Main brand color used for buttons and links</p>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">Accent Color</label>
-                <div class="color-input-wrapper">
-                  <input type="color" name="accentColor" value={settings.appearance.accentColor} class="color-input" id="accentColorPicker" />
-                  <input type="text" value={settings.appearance.accentColor} class="form-input color-text" id="accentColorText" />
-                </div>
-                <p class="form-hint">Secondary color for highlights and CTAs</p>
-              </div>
-            </div>
-            
-            <div class="color-preview">
-              <h4>Preview</h4>
-              <div class="preview-box">
-                <button class="preview-btn primary" id="previewPrimary">Primary Button</button>
-                <button class="preview-btn accent" id="previewAccent">Accent Button</button>
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">Logo URL</label>
-              <input type="url" name="logoUrl" class="form-input" value={settings.appearance.logoUrl} placeholder="https://example.com/logo.png" />
-              <p class="form-hint">Recommended size: 200x50px, PNG or SVG format</p>
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">Favicon URL</label>
-              <input type="url" name="faviconUrl" class="form-input" value={settings.appearance.faviconUrl} placeholder="https://example.com/favicon.ico" />
-              <p class="form-hint">Recommended size: 32x32px, ICO or PNG format</p>
-            </div>
-            
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Save Appearance</button>
-            </div>
+            <label>Primary Color<input type="color" name="primaryColor" value={settings.appearance.primaryColor} /></label>
+            <label>Accent Color<input type="color" name="accentColor" value={settings.appearance.accentColor} /></label>
+            <label>Logo URL<input type="url" name="logoUrl" value={settings.appearance.logoUrl} placeholder="https://..." /></label>
+            <label>Favicon URL<input type="url" name="faviconUrl" value={settings.appearance.faviconUrl} placeholder="https://..." /></label>
+            <button type="submit">Save Appearance</button>
           </form>
-        </section>
+        </div>
       )}
-      
-      <!-- Email Settings -->
-      {activeSection === 'email' && (
-        <section class="settings-section">
-          <div class="section-header">
-            <h2 class="section-title">Email Configuration</h2>
-            <p class="section-description">Configure email delivery and notifications</p>
-          </div>
-          
-          <form method="POST" class="settings-form">
-            <input type="hidden" name="action" value="update_email" />
-            
-            <div class="form-group">
-              <label class="form-label">Email Provider</label>
-              <select name="emailProvider" class="form-input">
-                <option value="supabase" selected={settings.email.provider === 'supabase'}>Supabase (Built-in)</option>
-                <option value="sendgrid" selected={settings.email.provider === 'sendgrid'}>SendGrid</option>
-                <option value="mailgun" selected={settings.email.provider === 'mailgun'}>Mailgun</option>
-                <option value="resend" selected={settings.email.provider === 'resend'}>Resend</option>
-                <option value="smtp" selected={settings.email.provider === 'smtp'}>Custom SMTP</option>
-              </select>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">From Name</label>
-                <input type="text" name="fromName" class="form-input" value={settings.email.fromName} />
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">From Email</label>
-                <input type="email" name="fromEmail" class="form-input" value={settings.email.fromEmail} />
-              </div>
-            </div>
-            
-            <div class="toggle-section">
-              <h4>Email Notifications</h4>
-              
-              <div class="toggle-group">
-                <label class="toggle">
-                  <input type="checkbox" name="emailWelcome" checked={settings.email.enableWelcome} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">Welcome Email</span>
-                    <span class="toggle-hint">Send welcome email to new users</span>
-                  </div>
-                </label>
-                
-                <label class="toggle">
-                  <input type="checkbox" name="emailCampaign" checked={settings.email.enableCampaignNotify} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">Campaign Notifications</span>
-                    <span class="toggle-hint">Notify creators of new matching campaigns</span>
-                  </div>
-                </label>
-                
-                <label class="toggle">
-                  <input type="checkbox" name="emailReview" checked={settings.email.enableReviewNotify} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">Review Notifications</span>
-                    <span class="toggle-hint">Notify creators when posts are reviewed</span>
-                  </div>
-                </label>
-                
-                <label class="toggle">
-                  <input type="checkbox" name="emailPayment" checked={settings.email.enablePaymentNotify} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">Payment Notifications</span>
-                    <span class="toggle-hint">Send payment confirmation emails</span>
-                  </div>
-                </label>
-              </div>
-            </div>
-            
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Save Email Settings</button>
-            </div>
-          </form>
-        </section>
-      )}
-      
-      <!-- Payment Settings -->
-      {activeSection === 'payments' && (
-        <section class="settings-section">
-          <div class="section-header">
-            <h2 class="section-title">Payment Settings</h2>
-            <p class="section-description">Configure payment processing and creator payouts</p>
-          </div>
-          
-          <form method="POST" class="settings-form">
-            <input type="hidden" name="action" value="update_payments" />
-            
-            <div class="form-group">
-              <label class="form-label">Payment Processor</label>
-              <select name="paymentProcessor" class="form-input">
-                <option value="stripe" selected={settings.payments.processor === 'stripe'}>Stripe</option>
-                <option value="paypal" selected={settings.payments.processor === 'paypal'}>PayPal</option>
-                <option value="manual" selected={settings.payments.processor === 'manual'}>Manual Payouts</option>
-              </select>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Platform Fee (%)</label>
-                <input type="number" name="platformFee" class="form-input" value={settings.payments.platformFee} min="0" max="50" />
-                <p class="form-hint">Percentage taken from each campaign payment</p>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">Minimum Payout ($)</label>
-                <input type="number" name="minPayout" class="form-input" value={settings.payments.minPayout} min="1" />
-                <p class="form-hint">Minimum amount for creator withdrawals</p>
-              </div>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Payout Schedule</label>
-                <select name="payoutSchedule" class="form-input">
-                  <option value="weekly" selected={settings.payments.payoutSchedule === 'weekly'}>Weekly</option>
-                  <option value="biweekly" selected={settings.payments.payoutSchedule === 'biweekly'}>Bi-weekly</option>
-                  <option value="monthly" selected={settings.payments.payoutSchedule === 'monthly'}>Monthly</option>
-                  <option value="manual" selected={settings.payments.payoutSchedule === 'manual'}>Manual Only</option>
-                </select>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">Default Currency</label>
-                <select name="currency" class="form-input">
-                  <option value="USD" selected={settings.payments.currency === 'USD'}>USD ($)</option>
-                  <option value="EUR" selected={settings.payments.currency === 'EUR'}>EUR (€)</option>
-                  <option value="GBP" selected={settings.payments.currency === 'GBP'}>GBP (£)</option>
-                  <option value="CAD" selected={settings.payments.currency === 'CAD'}>CAD ($)</option>
-                  <option value="AUD" selected={settings.payments.currency === 'AUD'}>AUD ($)</option>
-                </select>
-              </div>
-            </div>
-            
-            <div class="info-box">
-              <span class="info-icon">💡</span>
-              <div class="info-content">
-                <strong>Payment Integration</strong>
-                <p>To enable payments, connect your Stripe or PayPal account in the Integrations section.</p>
-              </div>
-            </div>
-            
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Save Payment Settings</button>
-            </div>
-          </form>
-        </section>
-      )}
-      
-      <!-- Security Settings -->
-      {activeSection === 'security' && (
-        <section class="settings-section">
-          <div class="section-header">
-            <h2 class="section-title">Security</h2>
-            <p class="section-description">Security settings and access control</p>
-          </div>
-          
-          <form method="POST" class="settings-form">
+
+      {section === 'security' && (
+        <div class="card">
+          <h2>Security</h2>
+          <form method="POST">
             <input type="hidden" name="action" value="update_security" />
-            
-            <div class="toggle-section">
-              <h4>Authentication</h4>
-              
-              <div class="toggle-group">
-                <label class="toggle">
-                  <input type="checkbox" name="requireEmailVerify" checked={settings.security.requireEmailVerify} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">Require Email Verification</span>
-                    <span class="toggle-hint">Users must verify their email before accessing the platform</span>
-                  </div>
-                </label>
-                
-                <label class="toggle">
-                  <input type="checkbox" name="enableMfa" checked={settings.security.enableMfa} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">Two-Factor Authentication</span>
-                    <span class="toggle-hint">Require 2FA for admin accounts</span>
-                  </div>
-                </label>
-              </div>
-            </div>
-            
-            <div class="toggle-section">
-              <h4>Access Control</h4>
-              
-              <div class="toggle-group">
-                <label class="toggle">
-                  <input type="checkbox" name="enableSignup" checked={settings.security.enableSignup} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">Allow New Registrations</span>
-                    <span class="toggle-hint">Allow new users to sign up for accounts</span>
-                  </div>
-                </label>
-                
-                <label class="toggle warning">
-                  <input type="checkbox" name="maintenanceMode" checked={settings.security.maintenanceMode} />
-                  <span class="toggle-slider"></span>
-                  <div class="toggle-content">
-                    <span class="toggle-label">⚠️ Maintenance Mode</span>
-                    <span class="toggle-hint">Only admins can access the site when enabled</span>
-                  </div>
-                </label>
-              </div>
-            </div>
-            
-            <div class="security-info">
-              <h4>Current Session</h4>
-              <div class="info-grid">
-                <div class="info-item">
-                  <span class="info-label">Login Type</span>
-                  <span class="info-value">
-                    {isMasterKeySession ? (
-                      <span class="badge warning">Master Key</span>
-                    ) : (
-                      <span class="badge success">Supabase Auth</span>
-                    )}
-                  </span>
-                </div>
-                
-                {!isMasterKeySession && session && (
-                  <>
-                    <div class="info-item">
-                      <span class="info-label">Email</span>
-                      <span class="info-value">{session.user.email}</span>
-                    </div>
-                    <div class="info-item">
-                      <span class="info-label">User ID</span>
-                      <span class="info-value mono">{session.user.id.substring(0, 16)}...</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Save Security Settings</button>
-            </div>
+            <label class="toggle"><input type="checkbox" name="requireEmailVerify" checked={settings.security.requireEmailVerify} /> Require Email Verification</label>
+            <label class="toggle"><input type="checkbox" name="enableMfa" checked={settings.security.enableMfa} /> Enable 2FA</label>
+            <label class="toggle"><input type="checkbox" name="enableSignup" checked={settings.security.enableSignup} /> Allow Signups</label>
+            <label class="toggle warning"><input type="checkbox" name="maintenanceMode" checked={settings.security.maintenanceMode} /> ⚠️ Maintenance Mode</label>
+            <button type="submit">Save Security Settings</button>
           </form>
-        </section>
+        </div>
       )}
-      
-      <!-- System Info -->
-      {activeSection === 'system' && (
-        <section class="settings-section">
-          <div class="section-header">
-            <h2 class="section-title">System Information</h2>
-            <p class="section-description">Platform statistics and maintenance tools</p>
-          </div>
-          
-          <div class="system-stats">
-            <div class="system-stat">
-              <div class="system-stat-value">{userCount || 0}</div>
-              <div class="system-stat-label">Total Users</div>
-            </div>
-            <div class="system-stat">
-              <div class="system-stat-value">{campaignCount || 0}</div>
-              <div class="system-stat-label">Campaigns</div>
-            </div>
-            <div class="system-stat">
-              <div class="system-stat-value">{postCount || 0}</div>
-              <div class="system-stat-label">Posts</div>
-            </div>
-            <div class="system-stat">
-              <div class="system-stat-value">v1.0.0</div>
-              <div class="system-stat-label">Version</div>
-            </div>
-          </div>
-          
-          <div class="danger-zone">
-            <h4>🚨 Danger Zone</h4>
-            <p>These actions can have significant impact on your platform.</p>
-            
-            <div class="danger-actions">
-              <div class="danger-item">
-                <div class="danger-info">
-                  <h5>Clear Cache</h5>
-                  <p>Remove all cached data. May temporarily slow down the site.</p>
-                </div>
-                <form method="POST">
-                  <input type="hidden" name="action" value="clear_cache" />
-                  <button type="submit" class="btn btn-danger" onclick="return confirm('Clear all cached data?')">
-                    Clear Cache
-                  </button>
-                </form>
-              </div>
-            </div>
-          </div>
-          
-          <div class="quick-links-section">
-            <h4>Quick Links</h4>
-            <div class="links-grid">
-              <a href="/admin/setup" class="quick-link">
-                <span>👤</span> Admin Setup
-              </a>
-              <a href="https://supabase.com/dashboard" target="_blank" class="quick-link">
-                <span>🗄️</span> Supabase
-              </a>
-              <a href="https://app.netlify.com" target="_blank" class="quick-link">
-                <span>🚀</span> Netlify
-              </a>
-              <a href="https://cloudinary.com/console" target="_blank" class="quick-link">
-                <span>🖼️</span> Cloudinary
-              </a>
-            </div>
-          </div>
-        </section>
+
+      {section === 'debug' && (
+        <div class="card">
+          <h2>Debug Info</h2>
+          <h3>Database Contents:</h3>
+          <pre>{JSON.stringify(rows, null, 2)}</pre>
+          <h3>Parsed Settings:</h3>
+          <pre>{JSON.stringify(settings, null, 2)}</pre>
+          <h3>Environment:</h3>
+          <ul>
+            <li>SUPABASE_URL: {import.meta.env.SUPABASE_URL ? '✅' : '❌'}</li>
+            <li>SUPABASE_SERVICE_KEY: {import.meta.env.SUPABASE_SERVICE_KEY ? '✅' : '❌'}</li>
+            <li>Master Key Session: {isMasterKeySession ? '✅' : '❌'}</li>
+          </ul>
+        </div>
       )}
-    </div>
+    </main>
   </div>
-  
+
   <style>
-    .settings-layout {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      gap: 2rem;
-    }
-    
-    .settings-nav {
-      background: white;
-      border-radius: 12px;
-      padding: 1rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      height: fit-content;
-      position: sticky;
-      top: 2rem;
-    }
-    
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.75rem 1rem;
-      border-radius: 8px;
-      text-decoration: none;
-      color: #6b7280;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-    
-    .nav-item:hover {
-      background: #f3f4f6;
-      color: #1a1a2e;
-    }
-    
-    .nav-item.active {
-      background: #dbeafe;
-      color: #2563eb;
-    }
-    
-    .nav-icon {
-      font-size: 1.125rem;
-    }
-    
-    .settings-content {
-      min-width: 0;
-    }
-    
-    .settings-section {
-      background: white;
-      border-radius: 12px;
-      padding: 2rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    }
-    
-    .section-header {
-      margin-bottom: 1.5rem;
-      padding-bottom: 1rem;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    
-    .section-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: #1a1a2e;
-      margin-bottom: 0.25rem;
-    }
-    
-    .section-description {
-      font-size: 0.875rem;
-      color: #6b7280;
-    }
-    
-    .settings-form {
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
-    
-    .form-row {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1.5rem;
-    }
-    
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    
-    .form-label {
-      font-weight: 600;
-      font-size: 0.875rem;
-      color: #374151;
-    }
-    
-    .form-input {
-      padding: 0.75rem 1rem;
-      border: 2px solid #e5e7eb;
-      border-radius: 8px;
-      font-size: 0.9375rem;
-      transition: border-color 0.2s;
-    }
-    
-    .form-input:focus {
-      outline: none;
-      border-color: #2563eb;
-    }
-    
-    textarea.form-input {
-      resize: vertical;
-      font-family: inherit;
-    }
-    
-    select.form-input {
-      cursor: pointer;
-    }
-    
-    .form-hint {
-      font-size: 0.75rem;
-      color: #9ca3af;
-    }
-    
-    .form-actions {
-      display: flex;
-      gap: 1rem;
-      margin-top: 0.5rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid #f0f0f0;
-    }
-    
-    .color-input-wrapper {
-      display: flex;
-      gap: 0.5rem;
-    }
-    
-    .color-input {
-      width: 48px;
-      height: 42px;
-      padding: 0;
-      border: 2px solid #e5e7eb;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    
-    .color-text {
-      flex: 1;
-      font-family: monospace;
-    }
-    
-    .color-preview {
-      background: #f9fafb;
-      padding: 1rem;
-      border-radius: 8px;
-      margin-top: -0.5rem;
-    }
-    
-    .color-preview h4 {
-      font-size: 0.75rem;
-      color: #6b7280;
-      margin-bottom: 0.75rem;
-    }
-    
-    .preview-box {
-      display: flex;
-      gap: 1rem;
-    }
-    
-    .preview-btn {
-      padding: 0.5rem 1rem;
-      border: none;
-      border-radius: 6px;
-      font-weight: 600;
-      color: white;
-      cursor: default;
-    }
-    
-    .preview-btn.primary {
-      background: var(--preview-primary, #2563eb);
-    }
-    
-    .preview-btn.accent {
-      background: var(--preview-accent, #059669);
-    }
-    
-    .toggle-section {
-      background: #f9fafb;
-      padding: 1.25rem;
-      border-radius: 8px;
-    }
-    
-    .toggle-section h4 {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: #1a1a2e;
-      margin-bottom: 1rem;
-    }
-    
-    .toggle-group {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-    
-    .toggle {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      cursor: pointer;
-      padding: 0.75rem;
-      background: white;
-      border-radius: 8px;
-      border: 1px solid #e5e7eb;
-      transition: all 0.2s;
-    }
-    
-    .toggle:hover {
-      border-color: #2563eb;
-    }
-    
-    .toggle.warning:has(input:checked) {
-      background: #fef3c7;
-      border-color: #f59e0b;
-    }
-    
-    .toggle input {
-      display: none;
-    }
-    
-    .toggle-slider {
-      width: 44px;
-      height: 24px;
-      background: #e5e7eb;
-      border-radius: 999px;
-      position: relative;
-      transition: background 0.2s;
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-    
-    .toggle-slider::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 20px;
-      height: 20px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.2s;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .toggle input:checked + .toggle-slider {
-      background: #2563eb;
-    }
-    
-    .toggle input:checked + .toggle-slider::after {
-      transform: translateX(20px);
-    }
-    
-    .toggle-content {
-      flex: 1;
-    }
-    
-    .toggle-label {
-      font-weight: 600;
-      font-size: 0.875rem;
-      color: #1a1a2e;
-      display: block;
-    }
-    
-    .toggle-hint {
-      font-size: 0.75rem;
-      color: #6b7280;
-      display: block;
-      margin-top: 0.125rem;
-    }
-    
-    .info-box {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 1rem;
-      background: #dbeafe;
-      border-radius: 8px;
-      border: 1px solid #bfdbfe;
-    }
-    
-    .info-icon {
-      font-size: 1.25rem;
-    }
-    
-    .info-content strong {
-      display: block;
-      color: #1e40af;
-      margin-bottom: 0.25rem;
-    }
-    
-    .info-content p {
-      font-size: 0.875rem;
-      color: #1e40af;
-    }
-    
-    .security-info {
-      background: #f9fafb;
-      padding: 1.25rem;
-      border-radius: 8px;
-    }
-    
-    .security-info h4 {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: #1a1a2e;
-      margin-bottom: 1rem;
-    }
-    
-    .info-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
-    }
-    
-    .info-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.5rem 0;
-    }
-    
-    .info-label {
-      font-size: 0.8125rem;
-      color: #6b7280;
-    }
-    
-    .info-value {
-      font-weight: 600;
-      font-size: 0.875rem;
-    }
-    
-    .info-value.mono {
-      font-family: monospace;
-      font-size: 0.75rem;
-    }
-    
-    .badge {
-      display: inline-block;
-      padding: 0.25rem 0.75rem;
-      border-radius: 999px;
-      font-size: 0.6875rem;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    
-    .badge.success { background: #d1fae5; color: #059669; }
-    .badge.warning { background: #fef3c7; color: #d97706; }
-    
-    .system-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-    
-    .system-stat {
-      text-align: center;
-      padding: 1.5rem;
-      background: #f9fafb;
-      border-radius: 8px;
-    }
-    
-    .system-stat-value {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #1a1a2e;
-    }
-    
-    .system-stat-label {
-      font-size: 0.75rem;
-      color: #6b7280;
-      text-transform: uppercase;
-    }
-    
-    .danger-zone {
-      margin-top: 2rem;
-      padding: 1.5rem;
-      background: #fef2f2;
-      border: 1px solid #fecaca;
-      border-radius: 8px;
-    }
-    
-    .danger-zone h4 {
-      color: #991b1b;
-      margin-bottom: 0.5rem;
-    }
-    
-    .danger-zone > p {
-      font-size: 0.875rem;
-      color: #b91c1c;
-      margin-bottom: 1rem;
-    }
-    
-    .danger-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-    
-    .danger-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem;
-      background: white;
-      border-radius: 6px;
-    }
-    
-    .danger-info h5 {
-      font-size: 0.875rem;
-      color: #1a1a2e;
-      margin-bottom: 0.25rem;
-    }
-    
-    .danger-info p {
-      font-size: 0.75rem;
-      color: #6b7280;
-    }
-    
-    .quick-links-section {
-      margin-top: 2rem;
-    }
-    
-    .quick-links-section h4 {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: #1a1a2e;
-      margin-bottom: 1rem;
-    }
-    
-    .links-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-    }
-    
-    .quick-link {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.75rem 1rem;
-      background: #f9fafb;
-      border-radius: 8px;
-      text-decoration: none;
-      color: #374151;
-      font-size: 0.875rem;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-    
-    .quick-link:hover {
-      background: #e5e7eb;
-      transform: translateY(-2px);
-    }
-    
-    .alert {
-      padding: 1rem 1.25rem;
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
-      font-weight: 500;
-    }
-    
-    .alert.success {
-      background: #d1fae5;
-      color: #065f46;
-      border: 1px solid #a7f3d0;
-    }
-    
-    .alert.error {
-      background: #fee2e2;
-      color: #991b1b;
-      border: 1px solid #fecaca;
-    }
-    
-    @media (max-width: 1024px) {
-      .settings-layout {
-        grid-template-columns: 1fr;
-      }
-      
-      .settings-nav {
-        position: static;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-      }
-      
-      .nav-item {
-        flex: 1;
-        min-width: fit-content;
-        justify-content: center;
-      }
-      
-      .nav-text {
-        display: none;
-      }
-      
-      .form-row {
-        grid-template-columns: 1fr;
-      }
-      
-      .system-stats {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      
-      .links-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-    
-    @media (max-width: 768px) {
-      .system-stats {
-        grid-template-columns: 1fr;
-      }
-      
-      .links-grid {
-        grid-template-columns: 1fr;
-      }
-      
-      .danger-item {
-        flex-direction: column;
-        gap: 1rem;
-        align-items: flex-start;
-      }
-    }
+    .layout { display: grid; grid-template-columns: 180px 1fr; gap: 1.5rem; }
+    .nav { background: white; border-radius: 12px; padding: 0.5rem; height: fit-content; }
+    .nav-link { display: block; padding: 0.75rem; text-decoration: none; color: #6b7280; border-radius: 8px; }
+    .nav-link:hover { background: #f3f4f6; }
+    .nav-link.active { background: #dbeafe; color: #2563eb; font-weight: 600; }
+    .card { background: white; border-radius: 12px; padding: 1.5rem; }
+    .card h2 { margin: 0 0 1.5rem; font-size: 1.25rem; color: #1a1a2e; }
+    .card h3 { margin: 1.5rem 0 0.5rem; font-size: 1rem; color: #374151; }
+    .card pre { background: #1a1a2e; color: #10b981; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.75rem; }
+    .card ul { font-size: 0.875rem; color: #6b7280; }
+    form { display: flex; flex-direction: column; gap: 1rem; }
+    label { display: flex; flex-direction: column; gap: 0.5rem; font-weight: 600; font-size: 0.875rem; color: #374151; }
+    input[type="text"], input[type="email"], input[type="url"], textarea, select {
+      padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem;
+    }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #2563eb; }
+    input[type="color"] { width: 60px; height: 40px; border: 2px solid #e5e7eb; border-radius: 8px; cursor: pointer; }
+    .toggle { flex-direction: row; align-items: center; gap: 0.75rem; padding: 0.75rem; background: #f9fafb; border-radius: 8px; cursor: pointer; }
+    .toggle.warning { background: #fef3c7; }
+    .toggle input { width: 20px; height: 20px; }
+    button { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .alert { padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+    .alert.success { background: #d1fae5; color: #065f46; }
+    .alert.error { background: #fee2e2; color: #991b1b; }
+    @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } .nav { display: flex; gap: 0.5rem; overflow-x: auto; } }
   </style>
-  
-  <script is:inline>
-    // Color picker sync
-    (function() {
-      const primaryPicker = document.getElementById('primaryColorPicker');
-      const primaryText = document.getElementById('primaryColorText');
-      const accentPicker = document.getElementById('accentColorPicker');
-      const accentText = document.getElementById('accentColorText');
-      const previewPrimary = document.getElementById('previewPrimary');
-      const previewAccent = document.getElementById('previewAccent');
-      
-      if (primaryPicker && primaryText) {
-        primaryPicker.addEventListener('input', function() {
-          primaryText.value = this.value;
-          if (previewPrimary) previewPrimary.style.background = this.value;
-        });
-        
-        primaryText.addEventListener('input', function() {
-          if (/^#[0-9A-Fa-f]{6}$/.test(this.value)) {
-            primaryPicker.value = this.value;
-            if (previewPrimary) previewPrimary.style.background = this.value;
-          }
-        });
-      }
-      
-      if (accentPicker && accentText) {
-        accentPicker.addEventListener('input', function() {
-          accentText.value = this.value;
-          if (previewAccent) previewAccent.style.background = this.value;
-        });
-        
-        accentText.addEventListener('input', function() {
-          if (/^#[0-9A-Fa-f]{6}$/.test(this.value)) {
-            accentPicker.value = this.value;
-            if (previewAccent) previewAccent.style.background = this.value;
-          }
-        });
-      }
-    })();
-  </script>
 </AdminLayout>
