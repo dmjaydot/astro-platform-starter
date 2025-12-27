@@ -1,156 +1,253 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import { getAuthSession } from '../lib/auth';
+// src/pages/index.astro
+import Layout from "../layouts/Layout.astro";
+import { supabase } from "../lib/supabase";
 
-const session = await getAuthSession(Astro.cookies);
-const userProfile = session ? { full_name: session.user.name } : null;
-const isUserAdmin = session?.isAdmin ?? false;
+// Load settings
+let general = {
+  siteName: 'Banity',
+  tagline: 'Create Authentic Content. Get Paid.',
+  description: 'Banity connects creators with brands for authentic UGC campaigns.',
+};
+
+let appearance = {
+  primaryColor: '#2563eb',
+  accentColor: '#059669',
+};
+
+try {
+  const { data: rows } = await supabase.from('site_settings').select('key, value');
+  if (rows) {
+    for (const row of rows) {
+      if (row.key === 'general') general = { ...general, ...row.value };
+      if (row.key === 'appearance') appearance = { ...appearance, ...row.value };
+    }
+  }
+} catch (e) {
+  // Use defaults
+}
+
+// Get some stats
+const { count: creatorCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'creator');
+const { count: campaignCount } = await supabase.from('campaigns').select('*', { count: 'exact', head: true }).eq('status', 'active');
 ---
 
-<Layout title="Home" {session} {userProfile} {isUserAdmin}>
-  <style>
-    .hero {
-      text-align: center;
-      padding: 6rem 2rem 3rem;
-      animation: fadeIn 0.6s ease-out;
-      background: linear-gradient(to bottom, #e0f2fe, #f9fafb);
-      border-radius: 12px;
-    }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } }
-
-    .hero h1 {
-      font-family: var(--font-serif);
-      font-size: 4.5rem;
-      font-weight: 700;
-      line-height: 1.1;
-      letter-spacing: -0.03em;
-      margin-bottom: 1.5rem;
-    }
-
-    .hero-subtitle {
-      font-size: 1.375rem;
-      color: var(--color-muted);
-      max-width: 700px;
-      margin: 0 auto 2.5rem;
-      line-height: 1.6;
-    }
-
-    .hero-cta {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 1rem 2rem;
-      background: var(--color-accent);
-      color: white;
-      border-radius: 10px;
-      font-weight: 600;
-      font-size: 1.0625rem;
-      transition: all 0.3s;
-    }
-
-    .hero-cta:hover {
-      background: #1d4ed8;
-      transform: translateY(-3px);
-      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
-    }
-
-    .section-title {
-      font-family: var(--font-serif);
-      font-size: 2.5rem;
-      font-weight: 700;
-      text-align: center;
-      margin: 5rem 0 3rem;
-      letter-spacing: -0.02em;
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 2.5rem;
-      margin-top: 3rem;
-    }
-
-    .feature-card {
-      background: white;
-      padding: 2.5rem;
-      border-radius: 12px;
-      border: 1px solid var(--color-border);
-      transition: all 0.3s;
-    }
-    .feature-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-    }
-    .feature-icon {
-      width: 3rem;
-      height: 3rem;
-      background: var(--color-accent-light);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 1.5rem;
-    }
-    .feature-card h3 {
-      font-family: var(--font-serif);
-      font-size: 1.5rem;
-      font-weight: 600;
-      margin-bottom: 1rem;
-    }
-    .feature-card p {
-      color: var(--color-muted);
-      line-height: 1.7;
-    }
-    .cta-section {
-      text-align: center;
-      padding: 4rem 2rem;
-      margin-top: 3rem;
-      background: #e0f2fe;
-      border-radius: 12px;
-    }
-    .cta-section .hero-subtitle { margin-bottom: 2rem; }
-
-    @media (max-width: 768px) {
-      .hero h1 { font-size: 2.5rem; }
-      .hero-subtitle { font-size: 1.125rem; }
-      .features-grid { grid-template-columns: 1fr; }
-    }
-  </style>
-
-  <section class="hero">
-    <h1>Create Authentic Content.<br>Get Paid.</h1>
-    <p class="hero-subtitle">
-      Join thousands of creators partnering with top brands to produce engaging user-generated content that drives real results.
-    </p>
-    <a href="#features" class="hero-cta">
-      Explore Campaigns
-    </a>
-  </section>
-
-  <section id="features">
-    <h2 class="section-title">Why Creators Choose Banity</h2>
-    <div class="features-grid">
-      <div class="feature-card">
-        <div class="feature-icon">💰</div>
-        <h3>Fair Pay</h3>
-        <p>Transparent compensation for every campaign. Get paid within 30 days of completing approved deliverables.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🛡️</div>
-        <h3>Rights Protected</h3>
-        <p>You retain ownership of your content. Limited 5-year license ensures your work is used fairly.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">⚡</div>
-        <h3>Fast Matching</h3>
-        <p>Our platform connects you with campaigns that match your audience and style in minutes.</p>
+<Layout>
+  <section class="hero" style={`--primary: ${appearance.primaryColor}; --accent: ${appearance.accentColor};`}>
+    <div class="hero-content">
+      <h1>{general.tagline}</h1>
+      <p>{general.description}</p>
+      <div class="hero-buttons">
+        <a href="/signup" class="btn btn-primary">Get Started</a>
+        <a href="/campaigns" class="btn btn-secondary">Browse Campaigns</a>
       </div>
     </div>
   </section>
-
-  <section class="cta-section">
-    <h2 class="section-title">Ready to Get Started?</h2>
-    <p class="hero-subtitle">Join our community of creators and start earning from your content today.</p>
-    <a href="#contact" class="hero-cta">Join Banity →</a>
+  
+  <section class="stats">
+    <div class="stats-container">
+      <div class="stat">
+        <div class="stat-value">{creatorCount || 0}+</div>
+        <div class="stat-label">Creators</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">{campaignCount || 0}</div>
+        <div class="stat-label">Active Campaigns</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">$10k+</div>
+        <div class="stat-label">Paid Out</div>
+      </div>
+    </div>
+  </section>
+  
+  <section class="features">
+    <div class="features-container">
+      <h2>How {general.siteName} Works</h2>
+      <div class="features-grid">
+        <div class="feature">
+          <div class="feature-icon">📢</div>
+          <h3>Find Campaigns</h3>
+          <p>Browse opportunities from top brands looking for authentic UGC content.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🎬</div>
+          <h3>Create Content</h3>
+          <p>Use your creativity to produce engaging content that resonates with audiences.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">💰</div>
+          <h3>Get Paid</h3>
+          <p>Receive payment for approved content directly to your account.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  
+  <section class="cta" style={`background: ${appearance.primaryColor};`}>
+    <div class="cta-container">
+      <h2>Ready to start creating?</h2>
+      <p>Join {general.siteName} today and connect with brands looking for creators like you.</p>
+      <a href="/signup" class="btn btn-white">Sign Up Free</a>
+    </div>
   </section>
 </Layout>
+
+<style>
+  .hero {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: white;
+    padding: 6rem 2rem;
+    text-align: center;
+  }
+  
+  .hero-content {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  
+  .hero h1 {
+    font-size: 3rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.2;
+  }
+  
+  .hero p {
+    font-size: 1.25rem;
+    opacity: 0.9;
+    margin-bottom: 2rem;
+  }
+  
+  .hero-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+  }
+  
+  .btn {
+    display: inline-block;
+    padding: 1rem 2rem;
+    border-radius: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  
+  .btn-primary {
+    background: var(--primary, #2563eb);
+    color: white;
+  }
+  
+  .btn-secondary {
+    background: transparent;
+    color: white;
+    border: 2px solid rgba(255,255,255,0.3);
+  }
+  
+  .btn-secondary:hover {
+    background: rgba(255,255,255,0.1);
+  }
+  
+  .btn-white {
+    background: white;
+    color: #1a1a2e;
+  }
+  
+  .stats {
+    padding: 4rem 2rem;
+    background: white;
+  }
+  
+  .stats-container {
+    max-width: 800px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    text-align: center;
+  }
+  
+  .stat-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+  
+  .stat-label {
+    color: #6b7280;
+  }
+  
+  .features {
+    padding: 5rem 2rem;
+    background: #f8fafc;
+  }
+  
+  .features-container {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  
+  .features h2 {
+    text-align: center;
+    font-size: 2rem;
+    margin-bottom: 3rem;
+    color: #1a1a2e;
+  }
+  
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+  }
+  
+  .feature {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  
+  .feature-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+  
+  .feature h3 {
+    margin-bottom: 0.5rem;
+    color: #1a1a2e;
+  }
+  
+  .feature p {
+    color: #6b7280;
+    font-size: 0.9375rem;
+  }
+  
+  .cta {
+    padding: 5rem 2rem;
+    text-align: center;
+    color: white;
+  }
+  
+  .cta-container {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  
+  .cta h2 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+  }
+  
+  .cta p {
+    opacity: 0.9;
+    margin-bottom: 2rem;
+  }
+  
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 2rem; }
+    .hero-buttons { flex-direction: column; }
+    .stats-container { grid-template-columns: 1fr; }
+    .features-grid { grid-template-columns: 1fr; }
+  }
+</style>
