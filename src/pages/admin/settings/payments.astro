@@ -1,0 +1,360 @@
+---
+// src/pages/admin/settings/payments.astro
+export const prerender = false;
+
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import { supabase } from "../../../lib/supabase";
+
+const isMasterKeySession = Astro.locals.isMasterKeySession || false;
+const session = Astro.locals.session;
+
+if (!isMasterKeySession && !session) {
+  return Astro.redirect('/admin/login');
+}
+
+let successMessage = '';
+let errorMessage = '';
+
+// Default payment settings
+const defaultSettings = {
+  stripeEnabled: false,
+  stripeMode: 'test', // 'test' or 'live'
+  stripeCurrency: 'USD',
+  minimumPayout: 50,
+  payoutSchedule: 'weekly', // 'instant', 'daily', 'weekly', 'monthly'
+  platformFeePercent: 10,
+  autoApprovePayments: false,
+};
+
+// Load current settings
+let paymentSettings = { ...defaultSettings };
+const { data: settingsRow } = await supabase
+  .from('site_settings')
+  .select('value')
+  .eq('key', 'payments')
+  .single();
+
+if (settingsRow?.value) {
+  paymentSettings = { ...defaultSettings, ...settingsRow.value };
+}
+
+// Check environment variables
+const hasStripeKeys = !!(import.meta.env.STRIPE_SECRET_KEY && import.meta.env.PUBLIC_STRIPE_PUBLISHABLE_KEY);
+const stripeMode = import.meta.env.STRIPE_SECRET_KEY?.startsWith('sk_live') ? 'live' : 'test';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const action = form.get('action') as string;
+
+  if (action === 'update_settings') {
+    const newSettings = {
+      stripeEnabled: form.get('stripeEnabled') === 'on',
+      stripeMode: stripeMode,
+      stripeCurrency: form.get('stripeCurrency') as string || 'USD',
+      minimumPayout: parseFloat(form.get('minimumPayout') as string) || 50,
+      payoutSchedule: form.get('payoutSchedule') as string || 'weekly',
+      platformFeePercent: parseFloat(form.get('platformFeePercent') as string) || 10,
+      autoApprovePayments: form.get('autoApprovePayments') === 'on',
+    };
+
+    const { error } = await supabase
+      .from('site_settings')
+      .upsert({ key: 'payments', value: newSettings, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+
+    if (error) errorMessage = error.message;
+    else {
+      successMessage = 'Payment settings saved!';
+      paymentSettings = newSettings;
+    }
+  }
+}
+
+// Fetch payment stats
+const { data: payments } = await supabase
+  .from('payments')
+  .select('amount, status')
+  .limit(1000);
+
+const stats = {
+  totalPayments: payments?.length || 0,
+  totalAmount: payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0,
+  pendingPayments: payments?.filter(p => p.status === 'pending').length || 0,
+  completedPayments: payments?.filter(p => p.status === 'completed').length || 0,
+};
+---
+
+<AdminLayout title="Payment Settings">
+  <div class="page-header">
+    <div class="breadcrumb">
+      <a href="/admin/settings">Settings</a>
+      <span>/</span>
+      <span>Payments</span>
+    </div>
+    <h1>💳 Payment Configuration</h1>
+  </div>
+
+  {successMessage && <div class="alert success">{successMessage}</div>}
+  {errorMessage && <div class="alert error">{errorMessage}</div>}
+
+  <!-- Stats Overview -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon">💳</div>
+      <div><div class="stat-value">{stats.totalPayments}</div><div class="stat-label">Total Payments</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">💰</div>
+      <div><div class="stat-value">${stats.totalAmount.toFixed(2)}</div><div class="stat-label">Total Paid</div></div>
+    </div>
+    <div class="stat-card warning">
+      <div class="stat-icon">⏳</div>
+      <div><div class="stat-value">{stats.pendingPayments}</div><div class="stat-label">Pending</div></div>
+    </div>
+    <div class="stat-card success">
+      <div class="stat-icon">✅</div>
+      <div><div class="stat-value">{stats.completedPayments}</div><div class="stat-label">Completed</div></div>
+    </div>
+  </div>
+
+  <!-- Stripe Status -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>🔌 Stripe Integration Status</h2>
+    </div>
+    <div class="panel-body">
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="status-label">API Keys</span>
+          {hasStripeKeys ? (
+            <span class="status-value success">✅ Configured</span>
+          ) : (
+            <span class="status-value error">❌ Not Configured</span>
+          )}
+        </div>
+        <div class="status-item">
+          <span class="status-label">Mode</span>
+          <span class={`status-value ${stripeMode === 'live' ? 'warning' : ''}`}>
+            {stripeMode === 'live' ? '🔴 LIVE' : '🟡 Test'}
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Payments Enabled</span>
+          <span class={`status-value ${paymentSettings.stripeEnabled ? 'success' : ''}`}>
+            {paymentSettings.stripeEnabled ? '✅ Enabled' : '⏸️ Disabled'}
+          </span>
+        </div>
+      </div>
+
+      {!hasStripeKeys && (
+        <div class="setup-instructions">
+          <h4>⚙️ Setup Required</h4>
+          <p>Add these environment variables to enable Stripe payments:</p>
+          <pre class="code-block">
+STRIPE_SECRET_KEY=sk_test_...
+PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+
+# For Stripe Connect (creator payouts):
+STRIPE_WEBHOOK_SECRET=whsec_...</pre>
+          <p class="hint">Get your keys from the <a href="https://dashboard.stripe.com/apikeys" target="_blank">Stripe Dashboard</a></p>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <!-- Payment Settings Form -->
+  <form method="POST">
+    <input type="hidden" name="action" value="update_settings" />
+    
+    <div class="panel">
+      <div class="panel-header">
+        <h2>⚙️ Payment Settings</h2>
+      </div>
+      <div class="panel-body">
+        <div class="settings-grid">
+          <div class="setting-item">
+            <label class="toggle">
+              <input type="checkbox" name="stripeEnabled" checked={paymentSettings.stripeEnabled} disabled={!hasStripeKeys} />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Enable Stripe Payments</span>
+            </label>
+            <p class="setting-hint">Allow creators to receive payments through the platform.</p>
+          </div>
+
+          <div class="setting-item">
+            <label>Currency</label>
+            <select name="stripeCurrency">
+              <option value="USD" selected={paymentSettings.stripeCurrency === 'USD'}>USD - US Dollar</option>
+              <option value="EUR" selected={paymentSettings.stripeCurrency === 'EUR'}>EUR - Euro</option>
+              <option value="GBP" selected={paymentSettings.stripeCurrency === 'GBP'}>GBP - British Pound</option>
+              <option value="CAD" selected={paymentSettings.stripeCurrency === 'CAD'}>CAD - Canadian Dollar</option>
+              <option value="AUD" selected={paymentSettings.stripeCurrency === 'AUD'}>AUD - Australian Dollar</option>
+            </select>
+          </div>
+
+          <div class="setting-item">
+            <label>Minimum Payout Amount ($)</label>
+            <input type="number" name="minimumPayout" min="1" step="0.01" value={paymentSettings.minimumPayout} />
+            <p class="setting-hint">Creators must earn at least this amount before requesting a payout.</p>
+          </div>
+
+          <div class="setting-item">
+            <label>Platform Fee (%)</label>
+            <input type="number" name="platformFeePercent" min="0" max="50" step="0.1" value={paymentSettings.platformFeePercent} />
+            <p class="setting-hint">Percentage deducted from creator payments as platform fee.</p>
+          </div>
+
+          <div class="setting-item">
+            <label>Payout Schedule</label>
+            <select name="payoutSchedule">
+              <option value="instant" selected={paymentSettings.payoutSchedule === 'instant'}>Instant (when approved)</option>
+              <option value="daily" selected={paymentSettings.payoutSchedule === 'daily'}>Daily</option>
+              <option value="weekly" selected={paymentSettings.payoutSchedule === 'weekly'}>Weekly</option>
+              <option value="monthly" selected={paymentSettings.payoutSchedule === 'monthly'}>Monthly</option>
+            </select>
+          </div>
+
+          <div class="setting-item">
+            <label class="toggle">
+              <input type="checkbox" name="autoApprovePayments" checked={paymentSettings.autoApprovePayments} />
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Auto-approve Milestone Payments</span>
+            </label>
+            <p class="setting-hint">Automatically process payments when milestones are approved.</p>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save Payment Settings</button>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <!-- Payment Flow Documentation -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>📖 Payment Flow</h2>
+    </div>
+    <div class="panel-body">
+      <div class="flow-diagram">
+        <div class="flow-step">
+          <div class="flow-number">1</div>
+          <div class="flow-content">
+            <h4>Campaign Created</h4>
+            <p>Admin creates campaign with budget and milestones</p>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-number">2</div>
+          <div class="flow-content">
+            <h4>Creator Assigned</h4>
+            <p>Creator accepts campaign invitation</p>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-number">3</div>
+          <div class="flow-content">
+            <h4>Milestone Completed</h4>
+            <p>Creator submits work for milestone</p>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-number">4</div>
+          <div class="flow-content">
+            <h4>Admin Approves</h4>
+            <p>Admin reviews and approves milestone</p>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step success">
+          <div class="flow-number">5</div>
+          <div class="flow-content">
+            <h4>Payment Sent</h4>
+            <p>Creator receives payment via Stripe Connect</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .page-header { margin-bottom: 1.5rem; }
+    .breadcrumb { display: flex; gap: 0.5rem; font-size: 0.875rem; color: #6b7280; margin-bottom: 0.5rem; }
+    .breadcrumb a { color: #2563eb; text-decoration: none; }
+    .page-header h1 { font-size: 1.5rem; color: #1a1a2e; margin: 0; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card { background: white; padding: 1.25rem; border-radius: 12px; display: flex; align-items: center; gap: 1rem; }
+    .stat-card.warning { background: linear-gradient(135deg, #fef3c7, #fde68a); }
+    .stat-card.success { background: linear-gradient(135deg, #d1fae5, #a7f3d0); }
+    .stat-icon { font-size: 1.5rem; width: 44px; height: 44px; background: #f3f4f6; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+    .stat-label { font-size: 0.8125rem; color: #6b7280; }
+
+    .panel { background: white; border-radius: 12px; overflow: hidden; margin-bottom: 1.5rem; }
+    .panel-header { padding: 1.25rem; border-bottom: 1px solid #e5e7eb; }
+    .panel-header h2 { font-size: 1rem; color: #1a1a2e; margin: 0; }
+    .panel-body { padding: 1.5rem; }
+
+    .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .status-item { background: #f9fafb; padding: 1rem; border-radius: 8px; text-align: center; }
+    .status-label { display: block; font-size: 0.75rem; color: #6b7280; text-transform: uppercase; margin-bottom: 0.5rem; }
+    .status-value { font-weight: 600; }
+    .status-value.success { color: #059669; }
+    .status-value.error { color: #dc2626; }
+    .status-value.warning { color: #d97706; }
+
+    .setup-instructions { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 1rem; }
+    .setup-instructions h4 { color: #92400e; margin: 0 0 0.5rem; font-size: 0.9375rem; }
+    .setup-instructions p { font-size: 0.875rem; color: #78350f; margin: 0 0 0.75rem; }
+    .setup-instructions .hint { margin-top: 0.75rem; margin-bottom: 0; }
+    .setup-instructions a { color: #2563eb; }
+    
+    .code-block { background: #1a1a2e; color: #10b981; padding: 1rem; border-radius: 6px; font-size: 0.75rem; overflow-x: auto; margin: 0; }
+
+    .settings-grid { display: flex; flex-direction: column; gap: 1.5rem; }
+    .setting-item { }
+    .setting-item > label:not(.toggle) { display: block; font-weight: 600; font-size: 0.875rem; color: #374151; margin-bottom: 0.5rem; }
+    .setting-item input[type="number"], .setting-item select { padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; width: 100%; max-width: 300px; }
+    .setting-item input:focus, .setting-item select:focus { outline: none; border-color: #2563eb; }
+    .setting-hint { font-size: 0.8125rem; color: #6b7280; margin-top: 0.25rem; }
+
+    .toggle { display: flex; align-items: center; gap: 0.75rem; cursor: pointer; }
+    .toggle input { display: none; }
+    .toggle-slider { width: 44px; height: 24px; background: #d1d5db; border-radius: 999px; position: relative; transition: background 0.2s; flex-shrink: 0; }
+    .toggle-slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: transform 0.2s; }
+    .toggle input:checked + .toggle-slider { background: #2563eb; }
+    .toggle input:checked + .toggle-slider::after { transform: translateX(20px); }
+    .toggle input:disabled + .toggle-slider { opacity: 0.5; }
+    .toggle-label { font-weight: 600; color: #374151; }
+
+    .form-actions { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e5e7eb; }
+
+    .flow-diagram { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+    .flow-step { background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1rem; text-align: center; min-width: 140px; }
+    .flow-step.success { background: #d1fae5; border-color: #10b981; }
+    .flow-number { width: 32px; height: 32px; background: #2563eb; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; margin: 0 auto 0.5rem; }
+    .flow-step.success .flow-number { background: #059669; }
+    .flow-content h4 { font-size: 0.875rem; color: #1a1a2e; margin: 0 0 0.25rem; }
+    .flow-content p { font-size: 0.75rem; color: #6b7280; margin: 0; }
+    .flow-arrow { font-size: 1.5rem; color: #9ca3af; }
+
+    .btn { padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; text-decoration: none; border: none; cursor: pointer; font-size: 0.9375rem; }
+    .btn-primary { background: #2563eb; color: white; }
+
+    .alert { padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+    .alert.success { background: #d1fae5; color: #065f46; }
+    .alert.error { background: #fee2e2; color: #991b1b; }
+
+    @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 768px) { 
+      .stats-grid { grid-template-columns: 1fr; }
+      .status-grid { grid-template-columns: 1fr; }
+      .flow-diagram { flex-direction: column; }
+      .flow-arrow { transform: rotate(90deg); }
+    }
+  </style>
+</AdminLayout>
