@@ -3,691 +3,352 @@
 export const prerender = false;
 
 import AdminLayout from "../../layouts/AdminLayout.astro";
-import { supabase } from '../../lib/supabase';
+import { supabase } from "../../lib/supabase";
 
-// Auth from middleware
 const isMasterKeySession = Astro.locals.isMasterKeySession || false;
 const session = Astro.locals.session;
-const isAdmin = Astro.locals.isAdmin;
-const isModerator = Astro.locals.isModerator;
 
-// Allow master key OR valid session with admin/mod access
-if (!isMasterKeySession && (!session || (!isAdmin && !isModerator))) {
+if (!isMasterKeySession && !session) {
   return Astro.redirect('/admin/login');
 }
 
-// Handle review action
-let actionMessage = '';
-let actionError = '';
+let successMessage = '';
+let errorMessage = '';
+const showForm = Astro.url.searchParams.get('action') === 'new';
+
+// Get users and campaigns for the form dropdowns
+const { data: creators } = await supabase.from('profiles').select('id, full_name, email').order('full_name');
+const { data: campaigns } = await supabase.from('campaigns').select('id, title').eq('status', 'active').order('title');
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
-  const postId = form.get('postId') as string;
   const action = form.get('action') as string;
-  const notes = form.get('notes') as string;
 
-  if (postId && action) {
-    let newStatus = 'pending';
-    if (action === 'approve') newStatus = 'approved';
-    else if (action === 'reject') newStatus = 'rejected';
-    else if (action === 'revision') newStatus = 'revision_requested';
+  if (action === 'create') {
+    const title = form.get('title') as string;
+    const creatorId = form.get('creatorId') as string || null;
+    const campaignId = form.get('campaignId') as string || null;
+    const mediaUrl = form.get('mediaUrl') as string || null;
+    const mediaType = form.get('mediaType') as string || 'image';
+    const caption = form.get('caption') as string || null;
 
-    const reviewerId = session?.user?.id || 'master-key-admin';
+    const { error } = await supabase.from('posts').insert({
+      title,
+      creator_id: creatorId,
+      campaign_id: campaignId,
+      media_url: mediaUrl,
+      media_type: mediaType,
+      caption,
+      status: 'pending',
+    });
 
-    const { error } = await supabase
-      .from('posts')
-      .update({
-        status: newStatus,
-        reviewed_by: reviewerId,
-        reviewed_at: new Date().toISOString(),
-        review_notes: notes || null,
-      })
-      .eq('id', postId);
-
-    if (error) {
-      actionError = `Failed to update: ${error.message}`;
-    } else {
-      actionMessage = `Post ${action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'sent for revision'}!`;
+    if (error) errorMessage = error.message;
+    else {
+      successMessage = 'Review task created!';
+      return Astro.redirect('/admin/review?created=true');
     }
+  }
+
+  if (action === 'approve' || action === 'reject' || action === 'revision') {
+    const postId = form.get('postId') as string;
+    const notes = form.get('notes') as string || null;
+    const statusMap: Record<string, string> = { approve: 'approved', reject: 'rejected', revision: 'revision_requested' };
+    
+    const { error } = await supabase.from('posts').update({
+      status: statusMap[action],
+      review_notes: notes,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', postId);
+
+    if (error) errorMessage = error.message;
+    else successMessage = `Post ${action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'sent for revision'}.`;
+  }
+
+  if (action === 'delete') {
+    const postId = form.get('postId') as string;
+    const { error } = await supabase.from('posts').delete().eq('id', postId);
+    if (error) errorMessage = error.message;
+    else successMessage = 'Post deleted.';
   }
 }
 
-// Fetch pending posts
+if (Astro.url.searchParams.get('created')) successMessage = 'Review task created!';
+
+// Get pending posts
 const { data: pendingPosts } = await supabase
   .from('posts')
-  .select(`
-    *,
-    profiles!creator_id(id, full_name, email, avatar_url),
-    campaigns(id, title, slug)
-  `)
+  .select('*, profiles!creator_id(full_name, email, avatar_url), campaigns(title)')
   .eq('status', 'pending')
-  .order('created_at', { ascending: true });
+  .order('created_at', { ascending: false });
 
-// Fetch recently reviewed
-const { data: recentlyReviewed } = await supabase
+// Get reviewed posts (history)
+const { data: reviewedPosts } = await supabase
   .from('posts')
-  .select(`
-    *,
-    profiles!creator_id(full_name, avatar_url),
-    campaigns(title)
-  `)
+  .select('*, profiles!creator_id(full_name, email), campaigns(title)')
   .neq('status', 'pending')
   .order('reviewed_at', { ascending: false })
-  .limit(10);
+  .limit(20);
 
-// Stats
-const pendingCount = pendingPosts?.length || 0;
-const approvedToday = recentlyReviewed?.filter(p => {
-  const reviewDate = new Date(p.reviewed_at);
-  const today = new Date();
-  return p.status === 'approved' && reviewDate.toDateString() === today.toDateString();
-}).length || 0;
-const rejectedToday = recentlyReviewed?.filter(p => {
-  const reviewDate = new Date(p.reviewed_at);
-  const today = new Date();
-  return p.status === 'rejected' && reviewDate.toDateString() === today.toDateString();
-}).length || 0;
-
-// View state
 const view = Astro.url.searchParams.get('view') || 'pending';
+
+const stats = {
+  pending: pendingPosts?.length || 0,
+  approved: reviewedPosts?.filter(p => p.status === 'approved').length || 0,
+  rejected: reviewedPosts?.filter(p => p.status === 'rejected').length || 0,
+};
 ---
 
 <AdminLayout title="Review Queue">
-  {actionMessage && <div class="alert success">{actionMessage}</div>}
-  {actionError && <div class="alert error">{actionError}</div>}
-  
-  <!-- Stats Cards -->
-  <div class="stats-grid">
-    <div class="stat-card urgent">
-      <div class="stat-icon">⏳</div>
-      <div class="stat-content">
-        <div class="stat-value">{pendingCount}</div>
-        <div class="stat-label">Pending Review</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">✅</div>
-      <div class="stat-content">
-        <div class="stat-value">{approvedToday}</div>
-        <div class="stat-label">Approved Today</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">❌</div>
-      <div class="stat-content">
-        <div class="stat-value">{rejectedToday}</div>
-        <div class="stat-label">Rejected Today</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">📊</div>
-      <div class="stat-content">
-        <div class="stat-value">{approvedToday + rejectedToday}</div>
-        <div class="stat-label">Reviewed Today</div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- View Toggle -->
-  <div class="view-toggle">
-    <a href="/admin/review" class:list={["toggle-btn", { active: view === 'pending' }]}>
-      <span>⏳</span> Pending ({pendingCount})
-    </a>
-    <a href="/admin/review?view=history" class:list={["toggle-btn", { active: view === 'history' }]}>
-      <span>📜</span> History
-    </a>
-  </div>
-  
-  {view === 'pending' ? (
-    pendingPosts && pendingPosts.length > 0 ? (
-      <div class="review-grid">
-        {pendingPosts.map((post, index) => (
-          <div class="review-card">
-            <div class="review-header">
-              <div class="review-number">#{index + 1}</div>
-              <div class="review-time">
-                <span>🕐</span> {Math.floor((Date.now() - new Date(post.created_at).getTime()) / (1000 * 60 * 60))}h ago
-              </div>
-            </div>
-            
-            <!-- Media Preview -->
-            <div class="review-media">
-              {post.media_url ? (
-                post.media_type === 'video' ? (
-                  <video src={post.media_url} controls class="media-preview"></video>
-                ) : (
-                  <img src={post.media_url} alt={post.title} class="media-preview" />
-                )
-              ) : (
-                <div class="media-placeholder">
-                  <span>📄</span>
-                  <span>No media</span>
-                </div>
-              )}
-            </div>
-            
-            <!-- Post Info -->
-            <div class="review-body">
-              <h3 class="review-title">{post.title || 'Untitled Post'}</h3>
-              
-              {post.caption && (
-                <p class="review-caption">
-                  {post.caption.substring(0, 150)}{post.caption.length > 150 ? '...' : ''}
-                </p>
-              )}
-              
-              <!-- Creator Info -->
-              <div class="creator-info">
-                <div class="creator-avatar">
-                  {post.profiles?.avatar_url ? (
-                    <img src={post.profiles.avatar_url} alt={post.profiles.full_name} />
-                  ) : (
-                    <span>{post.profiles?.full_name?.charAt(0) || '?'}</span>
-                  )}
-                </div>
-                <div class="creator-details">
-                  <div class="creator-name">{post.profiles?.full_name || 'Unknown Creator'}</div>
-                  <div class="creator-email">{post.profiles?.email}</div>
-                </div>
-              </div>
-              
-              <!-- Campaign Info -->
-              {post.campaigns && (
-                <div class="campaign-tag">
-                  <span>📢</span> {post.campaigns.title}
-                </div>
-              )}
-            </div>
-            
-            <!-- Review Actions -->
-            <div class="review-actions">
-              <form method="POST" class="review-form">
-                <input type="hidden" name="postId" value={post.id} />
-                
-                <div class="notes-field">
-                  <input 
-                    type="text" 
-                    name="notes" 
-                    placeholder="Add review notes (optional)" 
-                    class="notes-input"
-                  />
-                </div>
-                
-                <div class="action-buttons">
-                  <button type="submit" name="action" value="approve" class="btn btn-success">
-                    <span>✓</span> Approve
-                  </button>
-                  <button type="submit" name="action" value="revision" class="btn btn-warning">
-                    <span>↻</span> Revision
-                  </button>
-                  <button type="submit" name="action" value="reject" class="btn btn-danger">
-                    <span>✗</span> Reject
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        ))}
-      </div>
-    ) : (
-      <div class="panel">
-        <div class="empty-state">
-          <div class="empty-state-icon">🎉</div>
-          <div class="empty-state-title">All caught up!</div>
-          <p>No posts are waiting for review. Great job!</p>
-        </div>
-      </div>
-    )
-  ) : (
-    <!-- Review History -->
+  {successMessage && <div class="alert success">{successMessage}</div>}
+  {errorMessage && <div class="alert error">{errorMessage}</div>}
+
+  {showForm ? (
     <div class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">Review History</h2>
+        <h2>Create New Review Task</h2>
+        <a href="/admin/review" class="btn btn-secondary">← Back</a>
       </div>
-      
-      {recentlyReviewed && recentlyReviewed.length > 0 ? (
-        <div class="history-list">
-          {recentlyReviewed.map(post => (
-            <div class="history-item">
-              <div class="history-avatar">
-                {post.profiles?.avatar_url ? (
-                  <img src={post.profiles.avatar_url} alt={post.profiles.full_name} />
-                ) : (
-                  <span>{post.profiles?.full_name?.charAt(0) || '?'}</span>
-                )}
-              </div>
-              
-              <div class="history-content">
-                <div class="history-title">
-                  {post.title || 'Untitled Post'}
-                  <span class={`status-badge status-${post.status}`}>
-                    {post.status === 'approved' ? '✓ Approved' : 
-                     post.status === 'rejected' ? '✗ Rejected' : 
-                     '↻ Revision'}
-                  </span>
-                </div>
-                <div class="history-meta">
-                  <span>{post.profiles?.full_name}</span>
-                  <span>•</span>
-                  <span>{post.campaigns?.title}</span>
-                  <span>•</span>
-                  <span>{new Date(post.reviewed_at).toLocaleString()}</span>
-                </div>
-                {post.review_notes && (
-                  <div class="history-notes">
-                    <strong>Notes:</strong> {post.review_notes}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+      <form method="POST" class="form">
+        <input type="hidden" name="action" value="create" />
+        
+        <div class="form-group">
+          <label>Title / Description *</label>
+          <input type="text" name="title" required placeholder="Product Review Video" />
         </div>
-      ) : (
-        <div class="empty-state">
-          <div class="empty-state-icon">📜</div>
-          <div class="empty-state-title">No review history</div>
-          <p>Reviewed posts will appear here.</p>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Creator</label>
+            <select name="creatorId">
+              <option value="">-- Select Creator --</option>
+              {creators?.map(c => (
+                <option value={c.id}>{c.full_name || c.email}</option>
+              ))}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Campaign</label>
+            <select name="campaignId">
+              <option value="">-- Select Campaign --</option>
+              {campaigns?.map(c => (
+                <option value={c.id}>{c.title}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      )}
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Media URL</label>
+            <input type="url" name="mediaUrl" placeholder="https://..." />
+          </div>
+          <div class="form-group">
+            <label>Media Type</label>
+            <select name="mediaType">
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Caption / Notes</label>
+          <textarea name="caption" rows="3" placeholder="Additional details..."></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Task</button>
+          <a href="/admin/review" class="btn btn-secondary">Cancel</a>
+        </div>
+      </form>
     </div>
+  ) : (
+    <>
+      <div class="stats-grid">
+        <div class="stat-card urgent"><div class="stat-icon">⏳</div><div><div class="stat-value">{stats.pending}</div><div class="stat-label">Pending</div></div></div>
+        <div class="stat-card"><div class="stat-icon">✅</div><div><div class="stat-value">{stats.approved}</div><div class="stat-label">Approved Today</div></div></div>
+        <div class="stat-card"><div class="stat-icon">❌</div><div><div class="stat-value">{stats.rejected}</div><div class="stat-label">Rejected Today</div></div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="tabs">
+          <a href="?view=pending" class:list={["tab", { active: view === 'pending' }]}>Pending ({stats.pending})</a>
+          <a href="?view=history" class:list={["tab", { active: view === 'history' }]}>History</a>
+        </div>
+        <a href="?action=new" class="btn btn-primary">+ New Task</a>
+      </div>
+
+      {view === 'pending' ? (
+        pendingPosts && pendingPosts.length > 0 ? (
+          <div class="grid">
+            {pendingPosts.map(post => (
+              <div class="review-card">
+                <div class="media-preview">
+                  {post.media_url ? (
+                    post.media_type === 'video' ? (
+                      <video src={post.media_url} controls></video>
+                    ) : (
+                      <img src={post.media_url} alt={post.title} />
+                    )
+                  ) : (
+                    <div class="no-media">📄</div>
+                  )}
+                </div>
+                
+                <div class="review-content">
+                  <div class="review-header">
+                    <h3>{post.title || 'Untitled'}</h3>
+                    <span class="badge pending">Pending</span>
+                  </div>
+                  
+                  <div class="review-meta">
+                    <div class="creator">
+                      <div class="avatar">{post.profiles?.full_name?.charAt(0) || '?'}</div>
+                      <div>
+                        <div class="creator-name">{post.profiles?.full_name || 'Unknown'}</div>
+                        <div class="creator-email">{post.profiles?.email}</div>
+                      </div>
+                    </div>
+                    {post.campaigns && <div class="campaign">📢 {post.campaigns.title}</div>}
+                  </div>
+                  
+                  {post.caption && <p class="caption">{post.caption}</p>}
+                  
+                  <form method="POST" class="review-form">
+                    <input type="hidden" name="postId" value={post.id} />
+                    <textarea name="notes" placeholder="Review notes (optional)..." rows="2"></textarea>
+                    <div class="review-actions">
+                      <button name="action" value="approve" class="btn btn-success">✓ Approve</button>
+                      <button name="action" value="revision" class="btn btn-warning">↻ Revision</button>
+                      <button name="action" value="reject" class="btn btn-danger">✕ Reject</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div class="empty">
+            <span>🎉</span>
+            <h3>All caught up!</h3>
+            <p>No pending posts to review.</p>
+            <a href="?action=new" class="btn btn-primary">Create New Task</a>
+          </div>
+        )
+      ) : (
+        reviewedPosts && reviewedPosts.length > 0 ? (
+          <div class="panel">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Post</th>
+                  <th>Creator</th>
+                  <th>Campaign</th>
+                  <th>Status</th>
+                  <th>Reviewed</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reviewedPosts.map(post => (
+                  <tr>
+                    <td><strong>{post.title || 'Untitled'}</strong></td>
+                    <td>{post.profiles?.full_name || post.profiles?.email || 'Unknown'}</td>
+                    <td>{post.campaigns?.title || '—'}</td>
+                    <td><span class={`badge ${post.status}`}>{post.status}</span></td>
+                    <td>{post.reviewed_at ? new Date(post.reviewed_at).toLocaleDateString() : '—'}</td>
+                    <td class="notes">{post.review_notes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div class="empty">
+            <span>📋</span>
+            <p>No review history yet.</p>
+          </div>
+        )
+      )}
+    </>
   )}
-  
+
   <style>
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card { background: white; padding: 1.25rem; border-radius: 12px; display: flex; align-items: center; gap: 1rem; }
+    .stat-card.urgent { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; }
+    .stat-icon { font-size: 1.5rem; width: 44px; height: 44px; background: #f3f4f6; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+    .stat-label { font-size: 0.8125rem; color: #6b7280; }
     
-    .stat-card {
-      background: white;
-      padding: 1.5rem;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; background: white; padding: 1rem; border-radius: 12px; }
+    .tabs { display: flex; gap: 0.5rem; }
+    .tab { padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; color: #6b7280; font-weight: 500; }
+    .tab:hover { background: #f3f4f6; }
+    .tab.active { background: #2563eb; color: white; }
     
-    .stat-card.urgent {
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-      border: 2px solid #f59e0b;
-    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 1.5rem; }
+    .review-card { background: white; border-radius: 12px; overflow: hidden; }
+    .media-preview { height: 180px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; }
+    .media-preview img, .media-preview video { width: 100%; height: 100%; object-fit: cover; }
+    .no-media { font-size: 3rem; color: #d1d5db; }
+    .review-content { padding: 1.25rem; }
+    .review-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem; }
+    .review-header h3 { font-size: 1rem; color: #1a1a2e; }
+    .badge { font-size: 0.6875rem; padding: 0.25rem 0.5rem; border-radius: 6px; font-weight: 600; text-transform: uppercase; }
+    .badge.pending { background: #fef3c7; color: #d97706; }
+    .badge.approved { background: #d1fae5; color: #059669; }
+    .badge.rejected { background: #fee2e2; color: #dc2626; }
+    .badge.revision_requested { background: #dbeafe; color: #2563eb; }
+    .review-meta { margin-bottom: 1rem; }
+    .creator { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.5rem; }
+    .avatar { width: 36px; height: 36px; background: linear-gradient(135deg, #dbeafe, #c7d2fe); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #2563eb; }
+    .creator-name { font-weight: 600; font-size: 0.875rem; color: #1a1a2e; }
+    .creator-email { font-size: 0.75rem; color: #6b7280; }
+    .campaign { font-size: 0.8125rem; color: #6b7280; }
+    .caption { font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem; line-height: 1.5; }
+    .review-form textarea { width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; resize: none; margin-bottom: 0.75rem; }
+    .review-form textarea:focus { outline: none; border-color: #2563eb; }
+    .review-actions { display: flex; gap: 0.5rem; }
     
-    .stat-card.urgent .stat-icon {
-      background: #f59e0b;
-      color: white;
-    }
+    .panel { background: white; border-radius: 12px; overflow: hidden; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem; border-bottom: 1px solid #e5e7eb; }
+    .panel-header h2 { font-size: 1.125rem; color: #1a1a2e; }
     
-    .stat-icon {
-      width: 48px;
-      height: 48px;
-      background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-    }
+    .table { width: 100%; border-collapse: collapse; }
+    .table th { text-align: left; padding: 1rem; background: #f9fafb; font-size: 0.75rem; text-transform: uppercase; color: #6b7280; }
+    .table td { padding: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.875rem; }
+    .table .notes { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #6b7280; }
     
-    .stat-value {
-      font-size: 1.75rem;
-      font-weight: 700;
-      color: #1a1a2e;
-    }
+    .form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+    .form-group label { font-weight: 600; font-size: 0.875rem; color: #374151; }
+    .form-group input, .form-group select, .form-group textarea { padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #2563eb; }
+    .form-actions { display: flex; gap: 1rem; margin-top: 0.5rem; }
     
-    .stat-label {
-      font-size: 0.875rem;
-      color: #6b7280;
-    }
+    .btn { padding: 0.625rem 1.25rem; border-radius: 8px; font-weight: 600; text-decoration: none; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-secondary { background: #f3f4f6; color: #374151; }
+    .btn-success { background: #059669; color: white; }
+    .btn-warning { background: #f59e0b; color: white; }
+    .btn-danger { background: #dc2626; color: white; }
     
-    .view-toggle {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 2rem;
-      background: white;
-      padding: 0.5rem;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      width: fit-content;
-    }
+    .alert { padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+    .alert.success { background: #d1fae5; color: #065f46; }
+    .alert.error { background: #fee2e2; color: #991b1b; }
     
-    .toggle-btn {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.75rem 1.5rem;
-      border-radius: 8px;
-      text-decoration: none;
-      color: #6b7280;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-    
-    .toggle-btn:hover {
-      background: #f3f4f6;
-      color: #1a1a2e;
-    }
-    
-    .toggle-btn.active {
-      background: #2563eb;
-      color: white;
-    }
-    
-    .review-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-      gap: 1.5rem;
-    }
-    
-    .review-card {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-      overflow: hidden;
-    }
-    
-    .review-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 1.25rem;
-      background: #f9fafb;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    
-    .review-number {
-      font-weight: 700;
-      color: #2563eb;
-      font-size: 0.875rem;
-    }
-    
-    .review-time {
-      font-size: 0.75rem;
-      color: #9ca3af;
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-    }
-    
-    .review-media {
-      aspect-ratio: 16/9;
-      background: #f3f4f6;
-      position: relative;
-    }
-    
-    .media-preview {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    
-    .media-placeholder {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      color: #9ca3af;
-    }
-    
-    .media-placeholder span:first-child {
-      font-size: 2rem;
-    }
-    
-    .review-body {
-      padding: 1.25rem;
-    }
-    
-    .review-title {
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: #1a1a2e;
-      margin-bottom: 0.5rem;
-    }
-    
-    .review-caption {
-      font-size: 0.875rem;
-      color: #6b7280;
-      line-height: 1.5;
-      margin-bottom: 1rem;
-    }
-    
-    .creator-info {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.75rem;
-      background: #f9fafb;
-      border-radius: 8px;
-      margin-bottom: 0.75rem;
-    }
-    
-    .creator-avatar {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #dbeafe 0%, #c7d2fe 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 600;
-      color: #2563eb;
-      overflow: hidden;
-    }
-    
-    .creator-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    
-    .creator-name {
-      font-weight: 600;
-      color: #1a1a2e;
-      font-size: 0.875rem;
-    }
-    
-    .creator-email {
-      font-size: 0.75rem;
-      color: #9ca3af;
-    }
-    
-    .campaign-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.75rem;
-      background: #dbeafe;
-      color: #2563eb;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 500;
-    }
-    
-    .review-actions {
-      padding: 1rem 1.25rem;
-      background: #f9fafb;
-      border-top: 1px solid #f0f0f0;
-    }
-    
-    .review-form {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-    
-    .notes-field {
-      width: 100%;
-    }
-    
-    .notes-input {
-      width: 100%;
-      padding: 0.625rem 0.875rem;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      font-size: 0.875rem;
-      transition: border-color 0.2s;
-    }
-    
-    .notes-input:focus {
-      outline: none;
-      border-color: #2563eb;
-    }
-    
-    .action-buttons {
-      display: flex;
-      gap: 0.5rem;
-    }
-    
-    .action-buttons .btn {
-      flex: 1;
-      justify-content: center;
-    }
-    
-    .btn-warning {
-      background: #f59e0b;
-      color: white;
-    }
-    
-    .btn-warning:hover {
-      background: #d97706;
-    }
-    
-    /* History styles */
-    .history-list {
-      padding: 0;
-    }
-    
-    .history-item {
-      display: flex;
-      gap: 1rem;
-      padding: 1.25rem 1.5rem;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    
-    .history-item:last-child {
-      border-bottom: none;
-    }
-    
-    .history-item:hover {
-      background: #f9fafb;
-    }
-    
-    .history-avatar {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #dbeafe 0%, #c7d2fe 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 600;
-      color: #2563eb;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    
-    .history-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    
-    .history-content {
-      flex: 1;
-      min-width: 0;
-    }
-    
-    .history-title {
-      font-weight: 600;
-      color: #1a1a2e;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
-    
-    .status-badge {
-      font-size: 0.6875rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      font-weight: 600;
-    }
-    
-    .status-approved {
-      background: #d1fae5;
-      color: #059669;
-    }
-    
-    .status-rejected {
-      background: #fee2e2;
-      color: #dc2626;
-    }
-    
-    .status-revision_requested {
-      background: #fef3c7;
-      color: #d97706;
-    }
-    
-    .history-meta {
-      font-size: 0.75rem;
-      color: #9ca3af;
-      margin-top: 0.25rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-    
-    .history-notes {
-      margin-top: 0.5rem;
-      padding: 0.5rem 0.75rem;
-      background: #f3f4f6;
-      border-radius: 6px;
-      font-size: 0.8125rem;
-      color: #6b7280;
-    }
-    
-    .empty-state {
-      text-align: center;
-      padding: 4rem 2rem;
-      color: #6b7280;
-    }
-    
-    .empty-state-icon {
-      font-size: 4rem;
-      margin-bottom: 1rem;
-    }
-    
-    .empty-state-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: #374151;
-      margin-bottom: 0.5rem;
-    }
-    
-    @media (max-width: 1024px) {
-      .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
+    .empty { text-align: center; padding: 4rem 2rem; background: white; border-radius: 12px; }
+    .empty span { font-size: 3rem; display: block; margin-bottom: 1rem; }
+    .empty h3 { color: #374151; margin-bottom: 0.5rem; }
+    .empty p { color: #6b7280; margin-bottom: 1rem; }
     
     @media (max-width: 768px) {
-      .stats-grid {
-        grid-template-columns: 1fr;
-      }
-      
-      .review-grid {
-        grid-template-columns: 1fr;
-      }
-      
-      .action-buttons {
-        flex-direction: column;
-      }
+      .stats-grid { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .table { display: block; overflow-x: auto; }
     }
   </style>
 </AdminLayout>
