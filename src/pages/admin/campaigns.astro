@@ -14,59 +14,107 @@ if (!isMasterKeySession && !session) {
 
 let successMessage = '';
 let errorMessage = '';
-const showForm = Astro.url.searchParams.get('action') === 'new';
+const action = Astro.url.searchParams.get('action');
+const editId = Astro.url.searchParams.get('edit');
+
+// Get campaign being edited
+let editCampaign = null;
+if (editId) {
+  const { data } = await supabase.from('campaigns').select('*').eq('id', editId).single();
+  editCampaign = data;
+}
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
-  const action = form.get('action') as string;
+  const formAction = form.get('action') as string;
 
-  if (action === 'create') {
-    const title = form.get('title') as string;
-    const slug = form.get('slug') as string || title?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const description = form.get('description') as string;
-    const status = form.get('status') as string || 'draft';
-    const budget = parseFloat(form.get('budget') as string) || 0;
-    const paymentPerPost = parseFloat(form.get('paymentPerPost') as string) || 0;
-    const maxCreators = parseInt(form.get('maxCreators') as string) || null;
-    const deadline = form.get('deadline') as string || null;
+  if (formAction === 'create' || formAction === 'update') {
+    const title = (form.get('title') as string)?.trim();
+    
+    // Validation
+    if (!title) {
+      errorMessage = 'Campaign title is required.';
+    } else {
+      // Generate slug from title if not provided
+      let slug = (form.get('slug') as string)?.trim();
+      if (!slug) {
+        slug = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      }
+      
+      const description = (form.get('description') as string)?.trim() || null;
+      const status = (form.get('status') as string) || 'draft';
+      const budgetStr = form.get('budget') as string;
+      const budget = budgetStr ? parseFloat(budgetStr) : null;
+      const paymentStr = form.get('paymentPerPost') as string;
+      const paymentPerPost = paymentStr ? parseFloat(paymentStr) : null;
+      const maxCreatorsStr = form.get('maxCreators') as string;
+      const maxCreators = maxCreatorsStr ? parseInt(maxCreatorsStr) : null;
+      const deadline = (form.get('deadline') as string) || null;
 
-    const { error } = await supabase.from('campaigns').insert({
-      title,
-      slug,
-      description,
-      status,
-      budget,
-      payment_per_post: paymentPerPost,
-      max_creators: maxCreators,
-      deadline: deadline || null,
-    });
+      const campaignData = {
+        title,
+        slug,
+        description,
+        status,
+        budget,
+        payment_per_post: paymentPerPost,
+        max_creators: maxCreators,
+        deadline: deadline || null,
+      };
 
-    if (error) errorMessage = error.message;
-    else {
-      successMessage = 'Campaign created successfully!';
-      return Astro.redirect('/admin/campaigns?created=true');
+      if (formAction === 'update') {
+        const campaignId = form.get('campaignId') as string;
+        const { error } = await supabase.from('campaigns').update(campaignData).eq('id', campaignId);
+        if (error) {
+          errorMessage = error.code === '23505' ? 'A campaign with this slug already exists.' : error.message;
+        } else {
+          return Astro.redirect('/admin/campaigns?updated=true');
+        }
+      } else {
+        const { error } = await supabase.from('campaigns').insert(campaignData);
+        if (error) {
+          errorMessage = error.code === '23505' ? 'A campaign with this slug already exists.' : error.message;
+        } else {
+          return Astro.redirect('/admin/campaigns?created=true');
+        }
+      }
     }
   }
 
-  if (action === 'activate' || action === 'pause' || action === 'complete' || action === 'delete') {
+  if (formAction === 'activate' || formAction === 'pause' || formAction === 'complete') {
+    const campaignId = form.get('campaignId') as string;
+    const statusMap: Record<string, string> = { activate: 'active', pause: 'paused', complete: 'completed' };
+    const { error } = await supabase.from('campaigns').update({ status: statusMap[formAction] }).eq('id', campaignId);
+    if (error) errorMessage = error.message;
+    else successMessage = `Campaign ${formAction}d successfully.`;
+  }
+
+  if (formAction === 'delete') {
     const campaignId = form.get('campaignId') as string;
     
-    if (action === 'delete') {
+    // Check for related posts first
+    const { count } = await supabase.from('posts').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId);
+    
+    if (count && count > 0) {
+      errorMessage = `Cannot delete: ${count} post(s) are linked to this campaign. Remove or reassign them first.`;
+    } else {
       const { error } = await supabase.from('campaigns').delete().eq('id', campaignId);
       if (error) errorMessage = error.message;
       else successMessage = 'Campaign deleted.';
-    } else {
-      const statusMap: Record<string, string> = { activate: 'active', pause: 'paused', complete: 'completed' };
-      const { error } = await supabase.from('campaigns').update({ status: statusMap[action] }).eq('id', campaignId);
-      if (error) errorMessage = error.message;
-      else successMessage = `Campaign ${action}d.`;
     }
   }
 }
 
+// Success messages from redirects
 if (Astro.url.searchParams.get('created')) successMessage = 'Campaign created successfully!';
+if (Astro.url.searchParams.get('updated')) successMessage = 'Campaign updated successfully!';
 
-const { data: campaigns } = await supabase.from('campaigns').select('*').order('created_at', { ascending: false });
+// Load campaigns
+const { data: campaigns, error: loadError } = await supabase.from('campaigns').select('*').order('created_at', { ascending: false });
+
+if (loadError && loadError.code === '42P01') {
+  errorMessage = 'Campaigns table not found. Please run the database migration.';
+}
 
 const filter = Astro.url.searchParams.get('filter') || 'all';
 const filtered = campaigns?.filter(c => {
@@ -84,6 +132,8 @@ const stats = {
   draft: campaigns?.filter(c => c.status === 'draft' || !c.status).length || 0,
   completed: campaigns?.filter(c => c.status === 'completed').length || 0,
 };
+
+const showForm = action === 'new' || editId;
 ---
 
 <AdminLayout title="Campaigns">
@@ -93,61 +143,63 @@ const stats = {
   {showForm ? (
     <div class="panel">
       <div class="panel-header">
-        <h2>Create New Campaign</h2>
+        <h2>{editCampaign ? 'Edit Campaign' : 'Create New Campaign'}</h2>
         <a href="/admin/campaigns" class="btn btn-secondary">← Back</a>
       </div>
       <form method="POST" class="form">
-        <input type="hidden" name="action" value="create" />
+        <input type="hidden" name="action" value={editCampaign ? 'update' : 'create'} />
+        {editCampaign && <input type="hidden" name="campaignId" value={editCampaign.id} />}
         
         <div class="form-row">
           <div class="form-group">
             <label>Campaign Title *</label>
-            <input type="text" name="title" required placeholder="Summer UGC Campaign" />
+            <input type="text" name="title" required placeholder="Summer UGC Campaign" value={editCampaign?.title || ''} />
           </div>
           <div class="form-group">
-            <label>Slug</label>
-            <input type="text" name="slug" placeholder="auto-generated-from-title" />
+            <label>Slug <span class="hint">(auto-generated if empty)</span></label>
+            <input type="text" name="slug" placeholder="summer-ugc-campaign" value={editCampaign?.slug || ''} />
           </div>
         </div>
 
         <div class="form-group">
           <label>Description</label>
-          <textarea name="description" rows="4" placeholder="Describe the campaign requirements..."></textarea>
+          <textarea name="description" rows="4" placeholder="Describe the campaign requirements...">{editCampaign?.description || ''}</textarea>
         </div>
 
         <div class="form-row">
           <div class="form-group">
             <label>Status</label>
             <select name="status">
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="paused">Paused</option>
+              <option value="draft" selected={!editCampaign || editCampaign.status === 'draft'}>Draft</option>
+              <option value="active" selected={editCampaign?.status === 'active'}>Active</option>
+              <option value="paused" selected={editCampaign?.status === 'paused'}>Paused</option>
+              <option value="completed" selected={editCampaign?.status === 'completed'}>Completed</option>
             </select>
           </div>
           <div class="form-group">
             <label>Budget ($)</label>
-            <input type="number" name="budget" placeholder="5000" min="0" step="0.01" />
+            <input type="number" name="budget" placeholder="5000" min="0" step="0.01" value={editCampaign?.budget || ''} />
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group">
             <label>Payment Per Post ($)</label>
-            <input type="number" name="paymentPerPost" placeholder="100" min="0" step="0.01" />
+            <input type="number" name="paymentPerPost" placeholder="100" min="0" step="0.01" value={editCampaign?.payment_per_post || ''} />
           </div>
           <div class="form-group">
             <label>Max Creators</label>
-            <input type="number" name="maxCreators" placeholder="50" min="1" />
+            <input type="number" name="maxCreators" placeholder="50" min="1" value={editCampaign?.max_creators || ''} />
           </div>
         </div>
 
         <div class="form-group">
           <label>Deadline</label>
-          <input type="date" name="deadline" />
+          <input type="date" name="deadline" value={editCampaign?.deadline?.split('T')[0] || ''} />
         </div>
 
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary">Create Campaign</button>
+          <button type="submit" class="btn btn-primary">{editCampaign ? 'Update Campaign' : 'Create Campaign'}</button>
           <a href="/admin/campaigns" class="btn btn-secondary">Cancel</a>
         </div>
       </form>
@@ -182,21 +234,22 @@ const stats = {
               </div>
               {c.description && <p class="card-desc">{c.description.substring(0, 100)}{c.description.length > 100 ? '...' : ''}</p>}
               <div class="card-meta">
-                <span>💰 ${c.budget || 0}</span>
-                <span>📄 ${c.payment_per_post || 0}/post</span>
+                {c.budget != null && <span>💰 ${c.budget}</span>}
+                {c.payment_per_post != null && <span>📄 ${c.payment_per_post}/post</span>}
                 {c.deadline && <span>📅 {new Date(c.deadline).toLocaleDateString()}</span>}
               </div>
               <div class="card-actions">
+                <a href={`?edit=${c.id}`} class="btn btn-sm btn-secondary">✏️ Edit</a>
                 {c.status !== 'active' && (
                   <form method="POST" class="inline"><input type="hidden" name="campaignId" value={c.id} /><button name="action" value="activate" class="btn btn-sm btn-success">Activate</button></form>
                 )}
                 {c.status === 'active' && (
                   <form method="POST" class="inline"><input type="hidden" name="campaignId" value={c.id} /><button name="action" value="pause" class="btn btn-sm btn-warning">Pause</button></form>
                 )}
-                {c.status !== 'completed' && (
-                  <form method="POST" class="inline"><input type="hidden" name="campaignId" value={c.id} /><button name="action" value="complete" class="btn btn-sm btn-secondary">Complete</button></form>
-                )}
-                <form method="POST" class="inline"><input type="hidden" name="campaignId" value={c.id} /><button name="action" value="delete" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">🗑️</button></form>
+                <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this campaign? This cannot be undone.');">
+                  <input type="hidden" name="campaignId" value={c.id} />
+                  <button name="action" value="delete" class="btn btn-sm btn-danger">🗑️</button>
+                </form>
               </div>
             </div>
           ))}
@@ -215,17 +268,17 @@ const stats = {
     .stat-value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
     .stat-label { font-size: 0.8125rem; color: #6b7280; }
     
-    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; background: white; padding: 1rem; border-radius: 12px; }
-    .tabs { display: flex; gap: 0.5rem; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; background: white; padding: 1rem; border-radius: 12px; flex-wrap: wrap; gap: 1rem; }
+    .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .tab { padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; color: #6b7280; font-weight: 500; }
     .tab:hover { background: #f3f4f6; }
     .tab.active { background: #2563eb; color: white; }
     
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
     .card { background: white; border-radius: 12px; padding: 1.25rem; }
-    .card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem; }
-    .card-header h3 { font-size: 1rem; color: #1a1a2e; }
-    .badge { font-size: 0.6875rem; padding: 0.25rem 0.5rem; border-radius: 6px; font-weight: 600; text-transform: uppercase; }
+    .card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem; gap: 0.5rem; }
+    .card-header h3 { font-size: 1rem; color: #1a1a2e; word-break: break-word; }
+    .badge { font-size: 0.6875rem; padding: 0.25rem 0.5rem; border-radius: 6px; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
     .badge.active { background: #d1fae5; color: #059669; }
     .badge.draft { background: #f3f4f6; color: #6b7280; }
     .badge.paused { background: #fef3c7; color: #d97706; }
@@ -242,11 +295,12 @@ const stats = {
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
     .form-group label { font-weight: 600; font-size: 0.875rem; color: #374151; }
+    .form-group .hint { font-weight: 400; color: #9ca3af; font-size: 0.75rem; }
     .form-group input, .form-group select, .form-group textarea { padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; }
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #2563eb; }
     .form-actions { display: flex; gap: 1rem; margin-top: 0.5rem; }
     
-    .btn { padding: 0.625rem 1.25rem; border-radius: 8px; font-weight: 600; text-decoration: none; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; }
+    .btn { padding: 0.625rem 1.25rem; border-radius: 8px; font-weight: 600; text-decoration: none; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
     .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
     .btn-primary { background: #2563eb; color: white; }
     .btn-secondary { background: #f3f4f6; color: #374151; }
@@ -265,7 +319,7 @@ const stats = {
     @media (max-width: 768px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .form-row { grid-template-columns: 1fr; }
-      .toolbar { flex-direction: column; gap: 1rem; }
+      .toolbar { flex-direction: column; align-items: stretch; }
     }
   </style>
 </AdminLayout>
