@@ -166,13 +166,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
       return redirect("/admin/login");
     }
 
-    // For settings page, require admin role
-    if (path === "/admin/settings" && !locals.isAdmin && !locals.isMasterKeySession) {
-      return redirect("/unauthorized");
+    // Check admin access using the helper function for non-master-key sessions
+    if (!locals.isMasterKeySession) {
+      const hasAccess = await hasAdminAccess(locals.session.user.id);
+      if (!hasAccess && !locals.isAdmin && !locals.isModerator) {
+        return redirect("/unauthorized");
+      }
     }
 
-    // For other admin pages, require at least moderator access
-    if (!locals.isAdmin && !locals.isModerator && !locals.isMasterKeySession) {
+    // For settings page, require admin role
+    if (path === "/admin/settings" && !locals.isAdmin && !locals.isMasterKeySession) {
       return redirect("/unauthorized");
     }
   }
